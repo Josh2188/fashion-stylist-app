@@ -1,5 +1,13 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged,
+  // --- NEW: Import Google Sign-in tools ---
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -19,4 +27,16 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-export { auth, db, storage, signInAnonymously, onAuthStateChanged };
+// --- NEW: Create a Google Auth Provider ---
+const googleProvider = new GoogleAuthProvider();
+
+export { 
+  auth, 
+  db, 
+  storage, 
+  onAuthStateChanged,
+  // --- NEW: Export the new tools ---
+  googleProvider,
+  signInWithPopup,
+  signOut
+};
