@@ -1,58 +1,75 @@
 // service-worker.js
 
-const CACHE_NAME = 'fashion-stylist-cache-v2'; // Cache version updated
-const urlsToCache = [
+// Cache version updated to ensure the new service worker activates
+const CACHE_NAME = 'fashion-stylist-cache-v3'; 
+
+// Core assets that are essential for the app shell to load.
+// Caching only local assets during install is more reliable.
+const CORE_ASSETS = [
   '/',
   './index.html',
-  './manifest.json', // Add manifest to cache
-  './icons/icon-192.png', // Add icons to cache
+  './manifest.json',
+  './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
-  'https://cdn.tailwindcss.com',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js'
+  './icons/apple-touch-icon.png'
 ];
 
+// Install event: opens a cache and adds the core files to it.
 self.addEventListener('install', event => {
+  console.log('Service Worker: Installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting())
+      .then(cache => {
+        console.log('Service Worker: Caching core app shell');
+        return cache.addAll(CORE_ASSETS);
+      })
+      .then(() => self.skipWaiting()) // Activate the new service worker immediately
   );
 });
 
+// Activate event: cleans up old caches.
 self.addEventListener('activate', event => {
+  console.log('Service Worker: Activating...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.filter(cache => cache !== CACHE_NAME).map(cache => caches.delete(cache))
+        // Delete all caches that are not the current one
+        cacheNames.filter(cache => cache !== CACHE_NAME).map(cache => {
+          console.log('Service Worker: Clearing old cache:', cache);
+          return caches.delete(cache);
+        })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => self.clients.claim()) // Take control of all open pages
   );
 });
 
+// Fetch event: serves requests from the cache if available,
+// otherwise fetches from the network and caches the result.
 self.addEventListener('fetch', event => {
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match('/index.html'))
-    );
+  // We only want to cache GET requests.
+  if (event.request.method !== 'GET') {
     return;
   }
-  
+
+  // Strategy: Stale-While-Revalidate
+  // 1. Respond from cache immediately if available.
+  // 2. In the background, fetch a fresh version from the network
+  //    and update the cache for the next time.
   event.respondWith(
-    caches.match(event.request).then(response => {
-      return response || fetch(event.request).then(fetchResponse => {
-        return caches.open(CACHE_NAME).then(cache => {
-          if (event.request.method === 'GET' && !event.request.url.includes('firestore.googleapis.com')) {
-             cache.put(event.request, fetchResponse.clone());
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.match(event.request).then(cachedResponse => {
+        const fetchPromise = fetch(event.request).then(networkResponse => {
+          // If we get a valid response, update the cache.
+          // We don't cache Firestore API calls.
+          if (networkResponse && networkResponse.status === 200 && !event.request.url.includes('firestore.googleapis.com')) {
+            cache.put(event.request, networkResponse.clone());
           }
-          return fetchResponse;
+          return networkResponse;
         });
+
+        // Return the cached response right away if it exists,
+        // otherwise wait for the network response.
+        return cachedResponse || fetchPromise;
       });
     })
   );
