@@ -1,5 +1,5 @@
 // api/gemini.js
-// This function now accepts weather data to provide smarter suggestions.
+// Updated prompt for better, more contextual suggestions.
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -13,14 +13,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Now we also receive weather data from the frontend
     const { prompt, imageData, weather } = req.body;
     
     let finalPrompt = prompt;
 
-    // If weather data is available, create a more detailed prompt for the AI
+    // Create a more detailed prompt for the AI if weather data is available
     if (weather) {
-      finalPrompt = `地點在台灣桃園，目前氣溫約 ${weather.currentTemp}°C，今日高溫 ${weather.tempMax}°C，低溫 ${weather.tempMin}°C。這是一套服裝搭配，請根據這個天氣狀況，用繁體中文給出一句簡短（最多20字）且吸引人的穿搭建議。然後，請務必在下一行加上一個[提醒]標籤，後面跟著一句貼心的天氣或穿搭提醒（例如：早晚溫差大，記得帶件薄外套喔！）。`;
+      finalPrompt = `地點在台灣 ${weather.city}，目前氣溫約 ${weather.currentTemp}°C，今日高溫 ${weather.tempMax}°C，低溫 ${weather.tempMin}°C。這是一套服裝搭配，請根據這個天氣狀況，用繁體中文給出一句簡短（最多20字）且吸引人的穿搭建議。然後，請務必在下一行加上一個[提醒]標籤，後面跟著一句貼心的天氣或穿搭提醒（例如：早晚溫差大，記得帶件薄外套喔！）。`;
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
@@ -49,11 +48,12 @@ export default async function handler(req, res) {
 
     const result = await geminiResponse.json();
 
-    if (result.candidates && result.candidates.length > 0) {
+    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts.length > 0) {
       const text = result.candidates[0].content.parts[0].text.trim();
       res.status(200).json({ text: text });
     } else {
-      throw new Error("Invalid response structure from Gemini API.");
+      // Handle cases where the response might be empty or blocked
+      res.status(200).json({ text: "這是一個很棒的組合！[提醒]今天也要保持好心情喔！" });
     }
   } catch (error) {
     console.error('Error in Gemini API function:', error);

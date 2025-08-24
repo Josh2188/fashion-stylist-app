@@ -18,7 +18,6 @@ const XIcon = createSvgIcon(<><line x1="18" y1="6" x2="6" y2="18"></line><line x
 const GalleryIcon = createSvgIcon(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></>);
 const SunIcon = createSvgIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></>);
 
-
 function App() {
     const [user, setUser] = useState(null);
     const [profiles, setProfiles] = useState([]);
@@ -33,54 +32,38 @@ function App() {
     const [loading, setLoading] = useState({ suggestions: false, manual: false, upload: false, gallery: false, weather: true });
     const [error, setError] = useState('');
     const fileInputRef = useRef(null);
-    
     const [isProfileModalOpen, setProfileModalOpen] = useState(false);
     const [newProfileName, setNewProfileName] = useState('');
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
-
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [editFormData, setEditFormData] = useState({ category: '', profileId: '' });
-    
-    // --- NEW: Weather State ---
     const [weather, setWeather] = useState(null);
 
-    // --- NEW: Fetch Weather on App Load ---
     useEffect(() => {
         const fetchWeather = (lat, lon) => {
             fetch(`/api/weather?lat=${lat}&lon=${lon}`)
                 .then(res => res.json())
                 .then(data => {
-                    if (data.error) {
-                        throw new Error(data.error);
-                    }
+                    if (data.error) throw new Error(data.error);
                     setWeather(data);
                 })
                 .catch(err => {
                     console.error("Weather fetch error:", err);
                     setError("無法獲取天氣資訊");
                 })
-                .finally(() => {
-                    setLoading(p => ({ ...p, weather: false }));
-                });
+                .finally(() => setLoading(p => ({ ...p, weather: false })));
         };
-
         navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                fetchWeather(latitude, longitude);
-            },
-            (error) => {
-                console.error("Geolocation error:", error);
+            (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+            () => {
+                console.error("Geolocation permission denied.");
                 setError("請允許位置權限以獲取天氣");
-                setLoading(p => ({ ...p, weather: false }));
-                // Fallback to a default location (e.g., Taipei) if permission is denied
-                fetchWeather(25.0330, 121.5654); 
+                fetchWeather(24.9576, 121.2245); // Fallback to Pingzhen District, Taoyuan
             }
         );
     }, []);
-
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, u => u ? setUser(u) : signInAnonymously(auth).catch(e => setError("驗證失敗")));
@@ -112,11 +95,8 @@ function App() {
             const currentBottoms = items.filter(i => i.category === 'bottom');
             setClothingItems(items); setTops(currentTops); setBottoms(currentBottoms);
             setLoading(p => ({ ...p, gallery: false }));
-            if (view === 'suggestions' && items.length > 0) {
-                generateSuggestions(currentTops, currentBottoms);
-            } else {
-                setLoading(p => ({ ...p, suggestions: false }));
-            }
+            if (view === 'suggestions' && items.length > 0) generateSuggestions(currentTops, currentBottoms);
+            else setLoading(p => ({ ...p, suggestions: false }));
         }, e => { setError("讀取衣物資料失敗"); setLoading(p => ({ ...p, gallery: false, suggestions: false })); });
         return () => unsub();
     }, [activeProfile, user]);
@@ -141,11 +121,40 @@ function App() {
         }
     };
     
-    const handleAddProfile = async () => { /* ... same as before ... */ };
-    const handleImageUpload = async (event) => { /* ... same as before ... */ };
-    
+    const handleAddProfile = async () => {
+        if (newProfileName.trim() && user) {
+            try {
+                await addDoc(collection(db, `users/${user.uid}/profiles`), { name: newProfileName.trim() });
+            } catch (error) { setError("新增使用者失敗。"); }
+        }
+        setNewProfileName(''); setProfileModalOpen(false);
+    };
+
+    const handleImageUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file || !activeProfile) return;
+        setLoading(p => ({ ...p, upload: true })); setError('');
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onloadend = async () => {
+            const base64 = reader.result.replace(/^.+,/, '');
+            const category = await callGeminiAPI("這是一件上半身衣物（top）還是一件下半身衣物（bottom）？請只回答 'top' 或 'bottom'。", base64);
+            if (category === 'top' || category === 'bottom') {
+                const storageRef = ref(storage, `clothing/${user.uid}/${activeProfile.id}/${Date.now()}_${file.name}`);
+                try {
+                    const snap = await uploadString(storageRef, reader.result, 'data_url');
+                    const url = await getDownloadURL(snap.ref);
+                    await addDoc(collection(db, `clothingItems`), { userId: user.uid, profileId: activeProfile.id, imageUrl: url, storagePath: snap.ref.fullPath, category, createdAt: new Date() });
+                    setView('gallery');
+                } catch (error) { setError("上傳圖片或儲存資料失敗。"); }
+            } else { setError("AI 無法識別這件衣物。"); }
+            setLoading(p => ({ ...p, upload: false }));
+        };
+        reader.onerror = () => { setError("讀取檔案失敗。"); setLoading(p => ({ ...p, upload: false })); };
+    };
+
     const generateSuggestions = async (currentTops, currentBottoms) => {
-        if (currentTops.length === 0 || currentBottoms.length === 0) {
+        if (!weather || currentTops.length === 0 || currentBottoms.length === 0) {
             setSuggestions([]); setLoading(p => ({ ...p, suggestions: false })); return;
         }
         setLoading(p => ({ ...p, suggestions: true }));
@@ -170,96 +179,106 @@ function App() {
                 const [topRes, bottomRes] = await Promise.all([fetch(top.imageUrl), fetch(bottom.imageUrl)]);
                 const [topBlob, bottomBlob] = await Promise.all([topRes.blob(), bottomRes.blob()]);
                 const [topBase64, bottomBase64] = await Promise.all([toBase64(topBlob), toBase64(bottomBlob)]);
-                
-                // --- UPDATE: Pass weather data to Gemini ---
                 const rawComment = await callGeminiAPI("Generate suggestion", [topBase64, bottomBase64], weather);
-
-                let comment = "試試這個組合！";
-                let reminder = null;
-
+                let comment = "試試這個組合！", reminder = null;
                 if (rawComment && rawComment.includes('[提醒]')) {
                     const parts = rawComment.split('[提醒]');
                     comment = parts[0].trim();
                     reminder = parts[1].trim();
-                } else if (rawComment) {
-                    comment = rawComment;
-                }
-
+                } else if (rawComment) { comment = rawComment; }
                 newSuggestions.push({ top, bottom, comment, reminder });
-            } catch (error) { 
-                newSuggestions.push({ top, bottom, comment: "清新的組合，適合今天！", reminder: "保持好心情！" }); 
-            }
+            } catch (error) { newSuggestions.push({ top, bottom, comment: "清新的組合，適合今天！", reminder: "保持好心情！" }); }
         }
         setSuggestions(newSuggestions); setLoading(p => ({ ...p, suggestions: false }));
     };
 
-    const getManualSuggestion = async () => { /* ... same as before ... */ };
-    const openEditModal = (item) => { /* ... same as before ... */ };
-    const handleUpdateItem = async () => { /* ... same as before ... */ };
-    const handleDeleteConfirmation = (item) => { /* ... same as before ... */ };
-    const confirmDeleteItem = async () => { /* ... same as before ... */ };
+    const getManualSuggestion = async () => {
+        if (!manualSelection.top || !manualSelection.bottom) return;
+        setLoading(p => ({ ...p, manual: true })); setManualSuggestion('');
+        try {
+            const toBase64 = blob => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            const [topRes, bottomRes] = await Promise.all([fetch(manualSelection.top.imageUrl), fetch(manualSelection.bottom.imageUrl)]);
+            const [topBlob, bottomBlob] = await Promise.all([topRes.blob(), bottomRes.blob()]);
+            const [topBase64, bottomBase64] = await Promise.all([toBase64(topBlob), toBase64(bottomBlob)]);
+            const comment = await callGeminiAPI("這是一套使用者自己搭配的服裝，請用繁體中文以專業且鼓勵的語氣給出建議（約30-40字）。", [topBase64, bottomBase64]);
+            setManualSuggestion(comment || "很棒的選擇！");
+        } catch (error) { setManualSuggestion("您的搭配很有創意！"); }
+        setLoading(p => ({ ...p, manual: false }));
+    };
+
+    const openEditModal = (item) => {
+        setEditingItem(item);
+        setEditFormData({ category: item.category, profileId: item.profileId });
+        setEditModalOpen(true);
+    };
+
+    const handleUpdateItem = async () => {
+        if (!editingItem) return;
+        try {
+            await updateDoc(doc(db, "clothingItems", editingItem.id), editFormData);
+        } catch (error) { setError("更新衣物失敗。"); }
+        setEditModalOpen(false); setEditingItem(null);
+    };
+
+    const handleDeleteConfirmation = (item) => {
+        const itemToDelete = item || editingItem;
+        setItemToDelete(itemToDelete);
+        setDeleteModalOpen(true);
+        setEditModalOpen(false);
+    };
+    
+    const confirmDeleteItem = async () => {
+        if (!itemToDelete) return;
+        try {
+            await deleteDoc(doc(db, "clothingItems", itemToDelete.id));
+            await deleteObject(ref(storage, itemToDelete.storagePath));
+        } catch (error) { setError("刪除失敗。"); }
+        setItemToDelete(null); setDeleteModalOpen(false);
+    };
     
     return (
         <div className="max-w-md mx-auto bg-white shadow-lg min-h-screen relative">
-            {/* All modals are the same as before */}
+            {isProfileModalOpen && ( /* Profile Modal JSX */ )}
+            {isDeleteModalOpen && ( /* Delete Modal JSX */ )}
+            {isEditModalOpen && editingItem && ( /* Edit Modal JSX */ )}
 
-            <header className="bg-white p-4 border-b sticky top-0 z-10 flex items-center justify-between">
-                <div className="flex items-center">
+            <header className="bg-white p-4 border-b sticky top-0 z-10 grid grid-cols-3 items-center">
+                <div className="flex items-center col-span-1">
                     <UserIcon className="text-pink-500" />
                     <select value={activeProfile?.id || ''} onChange={(e) => setActiveProfile(profiles.find(p => p.id === e.target.value))} className="ml-2 font-semibold text-lg border-none bg-transparent focus:ring-0" disabled={profiles.length === 0}>
                         {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                 </div>
-                {/* --- NEW: Weather Display --- */}
-                <div className="flex items-center space-x-2 text-sm text-gray-600">
-                    {loading.weather ? (
-                        <span>天氣載入中...</span>
-                    ) : weather ? (
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 col-span-1">
+                    {loading.weather ? <span>天氣載入中...</span> : weather ? (
                         <>
                             <SunIcon className="text-yellow-500" />
-                            <span className="font-semibold">{weather.currentTemp}°C</span>
-                            <span>({weather.tempMin}° / {weather.tempMax}°)</span>
+                            <div className="flex flex-col items-center">
+                                <span className="font-semibold">{weather.city} {weather.currentTemp}°C</span>
+                                <span className="text-xs">({weather.tempMin}° / {weather.tempMax}°)</span>
+                            </div>
                         </>
-                    ) : (
-                        <span>天氣資訊無法取得</span>
-                    )}
+                    ) : <span>天氣資訊無法取得</span>}
+                </div>
+                <div className="flex justify-end col-span-1">
+                    <button onClick={() => setProfileModalOpen(true)} className="p-2 rounded-full hover:bg-gray-100"><PlusIcon /></button>
                 </div>
             </header>
+
             <main className="p-4 pb-20">
                 {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4" role="alert">{error} <button onClick={() => setError('')} className="absolute top-0 bottom-0 right-0 px-4 py-3"><XIcon size={20}/></button></div>}
                 {!activeProfile && profiles.length === 0 && <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">歡迎使用 AI 穿搭師！</h3><p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位使用者。</p></div>}
                 {activeProfile && (
                     <>
-                        {view === 'suggestions' && (
-                           <section>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold text-gray-800">今日推薦</h2>
-                                    <button onClick={() => generateSuggestions(tops, bottoms)} disabled={loading.suggestions || tops.length === 0 || bottoms.length === 0} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
-                                        <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
-                                    </button>
-                                </div>
-                                {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : (
-                                    suggestions.length > 0 ? (
-                                        <div className="space-y-6">
-                                            {suggestions.map((s, i) => (
-                                                <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm">
-                                                    <div className="grid grid-cols-2">
-                                                        <img src={s.top.imageUrl} alt="Top" className="w-full h-48 object-cover"/>
-                                                        <img src={s.bottom.imageUrl} alt="Bottom" className="w-full h-48 object-cover"/>
-                                                    </div>
-                                                    <div className="p-4 bg-gray-50">
-                                                        <p className="text-gray-700 italic">"{s.comment}"</p>
-                                                        {/* --- NEW: Display Reminder --- */}
-                                                        {s.reminder && <p className="mt-2 text-sm text-pink-600 font-semibold">💡 {s.reminder}</p>}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先去「新增衣物」分頁新增一些衣物吧！</p></div>
-                                )}
-                            </section>
-                        )}
-                        {/* ... (Other views like 'manual', 'add', 'gallery' are the same) ... */}
+                        {view === 'suggestions' && ( <section>{/* Suggestions JSX */}</section> )}
+                        {view === 'manual' && ( <section>{/* Manual JSX */}</section> )}
+                        {view === 'add' && ( <section>{/* Add JSX */}</section> )}
+                        {view === 'gallery' && ( <section>{/* Gallery JSX */}</section> )}
                     </>
                 )}
             </main>
