@@ -56,15 +56,14 @@
         const XIcon = createSvgIcon(<><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></>);
         
         // --- Firebase Configuration ---
-        // IMPORTANT: Replace these placeholders with your actual Firebase config values.
         const firebaseConfig = {
-  apiKey: "AIzaSyB9a_0V_y8ZayqGgd8vPmID3FcgS8rfteY",
-  authDomain: "fashion-stylist-app.firebaseapp.com",
-  projectId: "fashion-stylist-app",
-  storageBucket: "fashion-stylist-app.firebasestorage.app",
-  messagingSenderId: "185771802038",
-  appId: "1:185771802038:web:4a4aebe3d540d7ab951517",
-  measurementId: "G-V4Z3M46WX4"
+          apiKey: "AIzaSyB9a_0V_y8ZayqGgd8vPmID3FcgS8rfteY",
+          authDomain: "fashion-stylist-app.firebaseapp.com",
+          projectId: "fashion-stylist-app",
+          storageBucket: "fashion-stylist-app.firebasestorage.app",
+          messagingSenderId: "185771802038",
+          appId: "1:185771802038:web:4a4aebe3d540d7ab951517",
+          measurementId: "G-V4Z3M46WX4"
         };
 
         let app, auth, db, storage;
@@ -396,6 +395,7 @@
         ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 
+    <!-- CORRECTED SCRIPT FOR SERVICE WORKER REGISTRATION -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
