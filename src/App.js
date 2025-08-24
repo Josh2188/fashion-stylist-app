@@ -99,7 +99,7 @@ function App() {
             else setLoading(p => ({ ...p, suggestions: false }));
         }, e => { setError("讀取衣物資料失敗"); setLoading(p => ({ ...p, gallery: false, suggestions: false })); });
         return () => unsub();
-    }, [activeProfile, user]);
+    }, [activeProfile, user, view]); // Added view to dependencies
 
     const callGeminiAPI = async (prompt, imageData = null, weatherData = null) => {
         try {
