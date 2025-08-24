@@ -110,14 +110,14 @@ function App() {
         const unsub = onSnapshot(q, snap => {
             const profilesData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             setProfiles(profilesData);
-            if (!activeProfile && profilesData.length > 0) {
+            if (profilesData.length > 0 && !profilesData.find(p => p.id === activeProfile?.id)) {
                 setActiveProfile(profilesData[0]);
             } else if (profilesData.length === 0) {
                 setActiveProfile(null);
             }
         }, e => setError("讀取使用者資料失敗"));
         return () => unsub();
-    }, [user, activeProfile]);
+    }, [user]);
 
     useEffect(() => {
         if (!activeProfile || !user) {
@@ -464,7 +464,12 @@ function App() {
 
             <main className="p-4 pb-20">
                 {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4" role="alert">{error} <button onClick={() => setError('')} className="absolute top-0 bottom-0 right-0 px-4 py-3"><XIcon size={20}/></button></div>}
-                {!activeProfile && profiles.length === 0 && <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">歡迎使用 AI 穿搭師！</h3><p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位使用者。</p></div>}
+                {!activeProfile && (
+                    <div className="text-center p-8 bg-gray-50 rounded-lg">
+                        <h3 className="text-xl font-semibold text-gray-700">歡迎使用 AI 穿搭師！</h3>
+                        <p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位使用者，開始您的智慧穿搭之旅。</p>
+                    </div>
+                )}
                 {activeProfile && (
                     <>
                         {view === 'suggestions' && (
