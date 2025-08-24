@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-// --- UPDATE: Import new auth tools ---
 import { auth, db, storage, onAuthStateChanged, googleProvider, signInWithPopup, signOut } from './firebase';
 import { collection, addDoc, query, where, onSnapshot, doc, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 
-// --- Icon Components (remain the same) ---
+// --- Icon Components ---
 const createSvgIcon = (path) => (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke={props.color || 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>{path}</svg>
 );
@@ -24,7 +23,7 @@ const GoogleIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" hei
 
 function App() {
     const [user, setUser] = useState(null);
-    const [authLoading, setAuthLoading] = useState(true); // New state for initial auth check
+    const [authLoading, setAuthLoading] = useState(true);
     const [profiles, setProfiles] = useState([]);
     const [activeProfile, setActiveProfile] = useState(null);
     const [clothingItems, setClothingItems] = useState([]);
@@ -45,6 +44,8 @@ function App() {
     const [editingItem, setEditingItem] = useState(null);
     const [editFormData, setEditFormData] = useState({ category: '', profileId: '' });
     const [weather, setWeather] = useState(null);
+    const [isDuplicateModalOpen, setDuplicateModalOpen] = useState(false);
+    const [duplicateCheckData, setDuplicateCheckData] = useState({ newImageSrc: null, potentialMatch: null, newImageBase64: null });
 
     useEffect(() => {
         const fetchWeather = (lat, lon) => {
@@ -70,16 +71,14 @@ function App() {
         );
     }, []);
 
-    // --- UPDATE: Authentication Logic ---
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            setAuthLoading(false); // Auth check is complete
+            setAuthLoading(false);
         });
         return () => unsub();
     }, []);
 
-    // --- NEW: Sign-in and Sign-out Functions ---
     const handleSignIn = async () => {
         try {
             await signInWithPopup(auth, googleProvider);
@@ -92,7 +91,6 @@ function App() {
     const handleSignOut = async () => {
         try {
             await signOut(auth);
-            // Clear all local state on sign out
             setProfiles([]);
             setActiveProfile(null);
             setClothingItems([]);
@@ -103,7 +101,7 @@ function App() {
     };
 
     useEffect(() => {
-        if (!user) { // Clear data if user logs out
+        if (!user) {
             setProfiles([]);
             setActiveProfile(null);
             return;
@@ -143,17 +141,179 @@ function App() {
         return () => unsub();
     }, [activeProfile, user, view]);
 
-    const callGeminiAPI = async (prompt, imageData = null, weatherData = null) => { /* ... same ... */ };
-    const handleAddProfile = async () => { /* ... same ... */ };
-    const handleImageUpload = async (event) => { /* ... same ... */ };
-    const generateSuggestions = async (currentTops, currentBottoms) => { /* ... same ... */ };
-    const getManualSuggestion = async () => { /* ... same ... */ };
-    const openEditModal = (item) => { /* ... same ... */ };
-    const handleUpdateItem = async () => { /* ... same ... */ };
-    const handleDeleteConfirmation = (item) => { /* ... same ... */ };
-    const confirmDeleteItem = async () => { /* ... same ... */ };
+    const callGeminiAPI = async (prompt, imageData = null, weatherData = null) => {
+        try {
+            const response = await fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, imageData, weather: weatherData })
+            });
+            if (!response.ok) {
+                const errBody = await response.json();
+                throw new Error(errBody.error || 'API 請求失敗');
+            }
+            const result = await response.json();
+            return result.text;
+        } catch (error) {
+            console.error("Error calling our API:", error);
+            setError(`AI 服務暫時無法使用: ${error.message}`);
+            return null;
+        }
+    };
     
-    // --- NEW: Loading and Login Screens ---
+    const handleAddProfile = async () => {
+        if (newProfileName.trim() && user) {
+            try {
+                await addDoc(collection(db, `users/${user.uid}/profiles`), { name: newProfileName.trim() });
+            } catch (error) { setError("新增使用者失敗。"); }
+        }
+        setNewProfileName(''); setProfileModalOpen(false);
+    };
+    
+    const uploadNewItem = async (base64, dataUrl) => {
+        setLoading(p => ({ ...p, upload: true }));
+        setError('');
+        const category = await callGeminiAPI("這是一件上半身衣物（top）還是一件下半身衣物（bottom）？請只回答 'top' 或 'bottom'。", base64);
+        
+        if (category === 'top' || category === 'bottom') {
+            const storageRef = ref(storage, `clothing/${user.uid}/${activeProfile.id}/${Date.now()}`);
+            try {
+                const snap = await uploadString(storageRef, dataUrl, 'data_url');
+                const url = await getDownloadURL(snap.ref);
+                await addDoc(collection(db, `clothingItems`), { userId: user.uid, profileId: activeProfile.id, imageUrl: url, storagePath: snap.ref.fullPath, category, createdAt: new Date() });
+                setView('gallery');
+            } catch (error) { setError("上傳圖片或儲存資料失敗。"); }
+        } else { setError("AI 無法識別這件衣物。"); }
+        setLoading(p => ({ ...p, upload: false }));
+    };
+
+    const handleImageUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file || !activeProfile) return;
+        
+        setLoading(p => ({ ...p, upload: true }));
+        setError('');
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onloadend = async () => {
+            const dataUrl = reader.result;
+            const base64 = dataUrl.replace(/^.+,/, '');
+
+            try {
+                const response = await fetch('/api/check-duplicate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newImageBase64: base64, existingItems: clothingItems })
+                });
+                const result = await response.json();
+
+                if (result.isDuplicate) {
+                    setDuplicateCheckData({ newImageSrc: dataUrl, potentialMatch: result.matchingItem, newImageBase64: base64 });
+                    setDuplicateModalOpen(true);
+                    setLoading(p => ({ ...p, upload: false }));
+                } else {
+                    await uploadNewItem(base64, dataUrl);
+                }
+            } catch (err) {
+                setError("比對重複衣物時發生錯誤，將直接上傳。");
+                await uploadNewItem(base64, dataUrl);
+            }
+        };
+        reader.onerror = () => {
+            setError("讀取檔案失敗。");
+            setLoading(p => ({ ...p, upload: false }));
+        };
+    };
+
+    const generateSuggestions = async (currentTops, currentBottoms) => {
+        if (!weather || currentTops.length === 0 || currentBottoms.length === 0) {
+            setSuggestions([]); setLoading(p => ({ ...p, suggestions: false })); return;
+        }
+        setLoading(p => ({ ...p, suggestions: true }));
+        const newSuggestions = []; const usedPairs = new Set();
+        const attempts = Math.min(3, currentTops.length * currentBottoms.length);
+        while (newSuggestions.length < attempts) {
+            let top, bottom, pairKey, maxTries = 10;
+            do {
+                top = currentTops[Math.floor(Math.random() * currentTops.length)];
+                bottom = currentBottoms[Math.floor(Math.random() * currentBottoms.length)];
+                pairKey = `${top.id}-${bottom.id}`;
+            } while (usedPairs.has(pairKey) && --maxTries > 0);
+            if (maxTries === 0) break;
+            usedPairs.add(pairKey);
+            try {
+                const toBase64 = blob => new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                const [topRes, bottomRes] = await Promise.all([fetch(top.imageUrl), fetch(bottom.imageUrl)]);
+                const [topBlob, bottomBlob] = await Promise.all([topRes.blob(), bottomRes.blob()]);
+                const [topBase64, bottomBase64] = await Promise.all([toBase64(topBlob), toBase64(bottomBlob)]);
+                const rawComment = await callGeminiAPI("Generate suggestion", [topBase64, bottomBase64], weather);
+                let comment = "試試這個組合！", reminder = null;
+                if (rawComment && rawComment.includes('[提醒]')) {
+                    const parts = rawComment.split('[提醒]');
+                    comment = parts[0].trim();
+                    reminder = parts[1].trim();
+                } else if (rawComment) { comment = rawComment; }
+                newSuggestions.push({ top, bottom, comment, reminder });
+            } catch (error) { newSuggestions.push({ top, bottom, comment: "清新的組合，適合今天！", reminder: "保持好心情！" }); }
+        }
+        setSuggestions(newSuggestions); setLoading(p => ({ ...p, suggestions: false }));
+    };
+
+    const getManualSuggestion = async () => {
+        if (!manualSelection.top || !manualSelection.bottom) return;
+        setLoading(p => ({ ...p, manual: true })); setManualSuggestion('');
+        try {
+            const toBase64 = blob => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            const [topRes, bottomRes] = await Promise.all([fetch(manualSelection.top.imageUrl), fetch(manualSelection.bottom.imageUrl)]);
+            const [topBlob, bottomBlob] = await Promise.all([topRes.blob(), bottomRes.blob()]);
+            const [topBase64, bottomBase64] = await Promise.all([toBase64(topBlob), toBase64(bottomBlob)]);
+            const comment = await callGeminiAPI("這是一套使用者自己搭配的服裝，請用繁體中文以專業且鼓勵的語氣給出建議（約30-40字）。", [topBase64, bottomBase64]);
+            setManualSuggestion(comment || "很棒的選擇！");
+        } catch (error) { setManualSuggestion("您的搭配很有創意！"); }
+        setLoading(p => ({ ...p, manual: false }));
+    };
+
+    const openEditModal = (item) => {
+        setEditingItem(item);
+        setEditFormData({ category: item.category, profileId: item.profileId });
+        setEditModalOpen(true);
+    };
+
+    const handleUpdateItem = async () => {
+        if (!editingItem) return;
+        try {
+            await updateDoc(doc(db, "clothingItems", editingItem.id), editFormData);
+        } catch (error) { setError("更新衣物失敗。"); }
+        setEditModalOpen(false); setEditingItem(null);
+    };
+
+    const handleDeleteConfirmation = (item) => {
+        const itemToDelete = item || editingItem;
+        setItemToDelete(itemToDelete);
+        setDeleteModalOpen(true);
+        setEditModalOpen(false);
+    };
+    
+    const confirmDeleteItem = async () => {
+        if (!itemToDelete) return;
+        try {
+            await deleteDoc(doc(db, "clothingItems", itemToDelete.id));
+            await deleteObject(ref(storage, itemToDelete.storagePath));
+        } catch (error) { setError("刪除失敗。"); }
+        setItemToDelete(null); setDeleteModalOpen(false);
+    };
+    
     if (authLoading) {
         return (
             <div className="flex items-center justify-center h-screen bg-gray-100">
@@ -180,10 +340,102 @@ function App() {
         );
     }
 
-    // --- Main App Render (for logged-in users) ---
     return (
         <div className="max-w-md mx-auto bg-white shadow-lg min-h-screen relative">
-            {/* All modals are the same */}
+            {isProfileModalOpen && (
+                <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+                        <h3 className="text-lg font-semibold mb-4">新增使用者</h3>
+                        <input type="text" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} placeholder="例如：媽媽、女兒" className="w-full border rounded-md px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                        <div className="flex justify-end space-x-2">
+                            <button onClick={() => setProfileModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded-md">取消</button>
+                            <button onClick={handleAddProfile} className="px-4 py-2 bg-pink-500 text-white rounded-md">確定</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {isDeleteModalOpen && (
+                <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center">
+                        <h3 className="text-lg font-semibold mb-2">確定刪除？</h3>
+                        <p className="text-gray-600 mb-6">您確定要刪除這件衣物嗎？此操作無法復原。</p>
+                        <div className="flex justify-center space-x-4">
+                            <button onClick={() => setDeleteModalOpen(false)} className="px-6 py-2 bg-gray-200 rounded-md">取消</button>
+                            <button onClick={confirmDeleteItem} className="px-6 py-2 bg-red-500 text-white rounded-md">刪除</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {isEditModalOpen && editingItem && (
+                 <div className="absolute inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm relative">
+                        <button onClick={() => setEditModalOpen(false)} className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-800">
+                            <XIcon size={24} />
+                        </button>
+                        <h3 className="text-xl font-semibold mb-4">編輯衣物</h3>
+                        <img src={editingItem.imageUrl} alt="Editing item" className="w-full h-48 object-cover rounded-md mb-4"/>
+                        <div className="space-y-4">
+                            <div>
+                                <label htmlFor="category" className="block text-sm font-medium text-gray-700">分類</label>
+                                <select id="category" value={editFormData.category} onChange={e => setEditFormData({...editFormData, category: e.target.value})} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md">
+                                    <option value="top">上身</option>
+                                    <option value="bottom">下身</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="profile" className="block text-sm font-medium text-gray-700">所屬使用者</label>
+                                <select id="profile" value={editFormData.profileId} onChange={e => setEditFormData({...editFormData, profileId: e.target.value})} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md">
+                                    {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex justify-between items-center">
+                            <button onClick={() => handleDeleteConfirmation()} className="p-2 text-red-600 hover:bg-red-50 rounded-full">
+                                <Trash2Icon size={24}/>
+                            </button>
+                            <button onClick={handleUpdateItem} className="px-6 py-2 bg-pink-500 text-white font-semibold rounded-md hover:bg-pink-600">
+                                儲存變更
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {isDuplicateModalOpen && (
+                <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center">
+                        <h3 className="text-xl font-semibold mb-4">重複確認</h3>
+                        <p className="text-gray-600 mb-4">這件衣服似乎已經在您的衣櫥裡了。請問是同一件嗎？</p>
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <p className="text-sm font-medium mb-1">新上傳的</p>
+                                <img src={duplicateCheckData.newImageSrc} alt="New upload" className="w-full h-32 object-cover rounded-md"/>
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium mb-1">已存在的</p>
+                                <img src={duplicateCheckData.potentialMatch.imageUrl} alt="Existing item" className="w-full h-32 object-cover rounded-md"/>
+                            </div>
+                        </div>
+                        <div className="flex justify-around space-x-4">
+                            <button 
+                                onClick={() => {
+                                    setDuplicateModalOpen(false);
+                                    uploadNewItem(duplicateCheckData.newImageBase64, duplicateCheckData.newImageSrc);
+                                }} 
+                                className="px-6 py-2 bg-gray-200 rounded-md w-full"
+                            >
+                                不是，這是新的
+                            </button>
+                            <button 
+                                onClick={() => setDuplicateModalOpen(false)} 
+                                className="px-6 py-2 bg-pink-500 text-white rounded-md w-full"
+                            >
+                                是，取消上傳
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <header className="bg-white p-4 border-b sticky top-0 z-10 grid grid-cols-3 items-center">
                 <div className="flex items-center col-span-1">
                     <UserIcon className="text-pink-500" />
@@ -194,10 +446,10 @@ function App() {
                 <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 col-span-1">
                     {loading.weather ? <span>天氣載入中...</span> : weather ? (
                         <>
-                            <SunIcon className="text-yellow-500" />
-                            <div className="flex flex-col items-center">
-                                <span className="font-semibold">{weather.city} {weather.currentTemp}°C</span>
-                                <span className="text-xs">({weather.tempMin}° / {weather.tempMax}°)</span>
+                            <SunIcon className="text-yellow-500 flex-shrink-0" />
+                            <div className="flex flex-col items-start">
+                                <span className="font-semibold leading-tight">{weather.city}</span>
+                                <span className="leading-tight">{weather.currentTemp}°C <span className="text-xs text-gray-500">({weather.tempMin}°/{weather.tempMax}°)</span></span>
                             </div>
                         </>
                     ) : <span>天氣資訊無法取得</span>}
@@ -211,10 +463,108 @@ function App() {
             </header>
 
             <main className="p-4 pb-20">
-                {/* ... The rest of the main content is the same ... */}
+                {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4" role="alert">{error} <button onClick={() => setError('')} className="absolute top-0 bottom-0 right-0 px-4 py-3"><XIcon size={20}/></button></div>}
+                {!activeProfile && profiles.length === 0 && <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">歡迎使用 AI 穿搭師！</h3><p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位使用者。</p></div>}
+                {activeProfile && (
+                    <>
+                        {view === 'suggestions' && (
+                            <section>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold text-gray-800">今日推薦</h2>
+                                    <button onClick={() => generateSuggestions(tops, bottoms)} disabled={loading.suggestions || tops.length === 0 || bottoms.length === 0} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
+                                    </button>
+                                </div>
+                                {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : (
+                                    suggestions.length > 0 ? (
+                                        <div className="space-y-6">
+                                            {suggestions.map((s, i) => (
+                                                <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                                                    <div className="grid grid-cols-2">
+                                                        <img src={s.top.imageUrl} alt="Top" className="w-full h-48 object-cover"/>
+                                                        <img src={s.bottom.imageUrl} alt="Bottom" className="w-full h-48 object-cover"/>
+                                                    </div>
+                                                    <div className="p-4 bg-gray-50">
+                                                        <p className="text-gray-700 italic">"{s.comment}"</p>
+                                                        {s.reminder && <p className="mt-2 text-sm text-pink-600 font-semibold">💡 {s.reminder}</p>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先去「新增衣物」分頁新增一些衣物吧！</p></div>
+                                )}
+                            </section>
+                        )}
+                        {view === 'manual' && (
+                            <section>
+                                <h2 className="text-2xl font-bold text-gray-800 mb-4">自己動手搭</h2>
+                                <div>
+                                    <h3 className="font-semibold text-lg mb-2">選擇上身</h3>
+                                    <div className="flex overflow-x-auto space-x-3 pb-3 -mx-4 px-4">
+                                        {tops.map(item => <img key={item.id} src={item.imageUrl} alt="Top" onClick={() => setManualSelection(prev => ({...prev, top: item}))} className={`w-28 h-36 object-cover rounded-lg flex-shrink-0 cursor-pointer border-4 ${manualSelection.top?.id === item.id ? 'border-pink-500' : 'border-transparent'}`}/>)}
+                                    </div>
+                                </div>
+                                <div className="mt-6">
+                                    <h3 className="font-semibold text-lg mb-2">選擇下身</h3>
+                                    <div className="flex overflow-x-auto space-x-3 pb-3 -mx-4 px-4">
+                                        {bottoms.map(item => <img key={item.id} src={item.imageUrl} alt="Bottom" onClick={() => setManualSelection(prev => ({...prev, bottom: item}))} className={`w-28 h-36 object-cover rounded-lg flex-shrink-0 cursor-pointer border-4 ${manualSelection.bottom?.id === item.id ? 'border-pink-500' : 'border-transparent'}`}/>)}
+                                    </div>
+                                </div>
+                                {manualSelection.top && manualSelection.bottom && (
+                                    <div className="mt-6 text-center">
+                                        <button onClick={getManualSuggestion} disabled={loading.manual} className="bg-pink-500 text-white font-bold py-3 px-6 rounded-full w-full flex items-center justify-center disabled:bg-pink-300">
+                                            {loading.manual ? <RefreshCwIcon className="animate-spin mr-2"/> : <LightbulbIcon className="mr-2"/>}
+                                            {loading.manual ? 'AI 思考中...' : '獲取 AI 建議'}
+                                        </button>
+                                        {manualSuggestion && <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg text-purple-800"><p>{manualSuggestion}</p></div>}
+                                    </div>
+                                )}
+                            </section>
+                        )}
+                        {view === 'add' && (
+                            <section className="flex flex-col items-center justify-center p-4">
+                                <h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>
+                                <div className="w-full max-w-xs aspect-square bg-gray-900 rounded-lg flex flex-col items-center justify-center p-4 shadow-lg">
+                                    <div className="w-full h-full border-4 border-dashed border-gray-500 rounded-md flex flex-col items-center justify-center text-center text-white">
+                                        <CameraIcon className="h-16 w-16 text-gray-400 mb-4"/>
+                                        <p className="text-gray-300 mb-6">將衣物置於方框中拍攝</p>
+                                    </div>
+                                </div>
+                                <p className="text-gray-600 my-6 text-center">上傳照片，AI 會自動幫您分類！</p>
+                                <button onClick={() => fileInputRef.current.click()} disabled={loading.upload} className="bg-pink-500 text-white font-bold py-3 px-8 rounded-full w-full max-w-xs disabled:bg-pink-300">
+                                    {loading.upload ? 'AI 辨識中...' : '開啟相機或選擇照片'}
+                                </button>
+                                <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+                                {loading.upload && <div className="mt-4"><div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">請稍候...</p></div></div>}
+                            </section>
+                        )}
+                        {view === 'gallery' && (
+                            <section>
+                                <h2 className="text-2xl font-bold text-gray-800 mb-4">我的衣櫥</h2>
+                                {clothingItems.length > 0 ? (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {clothingItems.map(item => (
+                                            <div key={item.id} className="relative group cursor-pointer" onClick={() => openEditModal(item)}>
+                                                <img src={item.imageUrl} alt="Clothing item" className="w-full h-32 object-cover rounded-md"/>
+                                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex items-center justify-center">
+                                                    <p className="text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">編輯</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥是空的</h3><p className="text-gray-500 mt-2">點擊下方的「新增衣物」按鈕，開始建立您的數位衣櫥吧！</p></div>}
+                            </section>
+                        )}
+                    </>
+                )}
             </main>
             <footer className="bg-white border-t fixed bottom-0 left-0 right-0 max-w-md mx-auto z-10 p-2">
-                {/* ... The footer is the same ... */}
+                <nav className="flex justify-around">
+                    <button onClick={() => setView('suggestions')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'suggestions' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><Wand2Icon /><span className="text-xs font-medium">AI 推薦</span></button>
+                    <button onClick={() => setView('manual')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'manual' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><LightbulbIcon /><span className="text-xs font-medium">手動搭配</span></button>
+                    <button onClick={() => setView('add')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'add' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><CameraIcon /><span className="text-xs font-medium">新增衣物</span></button>
+                    <button onClick={() => setView('gallery')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'gallery' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><GalleryIcon /><span className="text-xs font-medium">我的衣櫥</span></button>
+                </nav>
             </footer>
         </div>
     );
