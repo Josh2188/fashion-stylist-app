@@ -3,7 +3,7 @@ import { auth, db, storage, onAuthStateChanged, googleProvider, signInWithPopup,
 import { collection, addDoc, query, where, onSnapshot, doc, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 
-// --- Icon Components ---
+// --- Icon Components (圖示元件) ---
 const createSvgIcon = (path) => (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke={props.color || 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>{path}</svg>
 );
@@ -20,7 +20,7 @@ const SunIcon = createSvgIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2
 const LogOutIcon = createSvgIcon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>);
 const GoogleIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#FF3D00" d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 35.797 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>);
 
-// --- Camera Capture Modal Component ---
+// --- Camera Capture Modal Component (相機擷取彈出視窗元件) ---
 function CameraCaptureModal({ onClose, onCapture }) {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -155,7 +155,7 @@ function App() {
             () => {
                 console.error("Geolocation permission denied.");
                 setError("請允許位置權限以獲取天氣");
-                fetchWeather(24.9576, 121.2245);
+                fetchWeather(24.9576, 121.2245); // 備用座標
             }
         );
     }, []);
@@ -476,7 +476,7 @@ function App() {
                             <XIcon size={24} />
                         </button>
                         <h3 className="text-xl font-semibold mb-4">編輯衣物</h3>
-                        <img src={editingItem.imageUrl} alt="Editing item" className="w-full h-48 object-cover rounded-md mb-4"/>
+                        <img src={editingItem.imageUrl} alt="正在編輯的衣物" className="w-full h-48 object-cover rounded-md mb-4"/>
                         <div className="space-y-4">
                             <div>
                                 <label htmlFor="category" className="block text-sm font-medium text-gray-700">分類</label>
@@ -511,11 +511,11 @@ function App() {
                         <div className="grid grid-cols-2 gap-4 mb-6">
                             <div>
                                 <p className="text-sm font-medium mb-1">新上傳的</p>
-                                <img src={duplicateCheckData.newImageSrc} alt="New upload" className="w-full h-32 object-cover rounded-md"/>
+                                <img src={duplicateCheckData.newImageSrc} alt="新上傳的衣物" className="w-full h-32 object-cover rounded-md"/>
                             </div>
                             <div>
                                 <p className="text-sm font-medium mb-1">已存在的</p>
-                                <img src={duplicateCheckData.potentialMatch.imageUrl} alt="Existing item" className="w-full h-32 object-cover rounded-md"/>
+                                <img src={duplicateCheckData.potentialMatch.imageUrl} alt="已存在的衣物" className="w-full h-32 object-cover rounded-md"/>
                             </div>
                         </div>
                         <div className="flex justify-around space-x-4">
@@ -567,13 +567,19 @@ function App() {
 
             <main className="p-4 pb-20">
                 {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4" role="alert">{error} <button onClick={() => setError('')} className="absolute top-0 bottom-0 right-0 px-4 py-3"><XIcon size={20}/></button></div>}
-                {view !== 'add' && !activeProfile && (
+                
+                {/* --- 以下是修正後的顯示邏輯 --- */}
+
+                {/* 狀況一：當沒有選擇使用者時，顯示歡迎訊息 (新增衣物頁除外) */}
+                {!activeProfile && view !== 'add' && (
                     <div className="text-center p-8 bg-gray-50 rounded-lg">
                         <h3 className="text-xl font-semibold text-gray-700">歡迎使用 AI 穿搭師！</h3>
                         <p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位使用者，開始您的智慧穿搭之旅。</p>
                     </div>
                 )}
-                {view === 'add' || (activeProfile && (
+                
+                {/* 狀況二：當選擇了使用者時，才顯示依賴使用者資料的頁面 */}
+                {activeProfile && (
                     <>
                         {view === 'suggestions' && (
                             <section>
@@ -589,8 +595,8 @@ function App() {
                                             {suggestions.map((s, i) => (
                                                 <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm">
                                                     <div className="grid grid-cols-2">
-                                                        <img src={s.top.imageUrl} alt="Top" className="w-full h-48 object-cover"/>
-                                                        <img src={s.bottom.imageUrl} alt="Bottom" className="w-full h-48 object-cover"/>
+                                                        <img src={s.top.imageUrl} alt="上衣" className="w-full h-48 object-cover"/>
+                                                        <img src={s.bottom.imageUrl} alt="下身" className="w-full h-48 object-cover"/>
                                                     </div>
                                                     <div className="p-4 bg-gray-50">
                                                         <p className="text-gray-700 italic">"{s.comment}"</p>
@@ -609,13 +615,13 @@ function App() {
                                 <div>
                                     <h3 className="font-semibold text-lg mb-2">選擇上身</h3>
                                     <div className="flex overflow-x-auto space-x-3 pb-3 -mx-4 px-4">
-                                        {tops.map(item => <img key={item.id} src={item.imageUrl} alt="Top" onClick={() => setManualSelection(prev => ({...prev, top: item}))} className={`w-28 h-36 object-cover rounded-lg flex-shrink-0 cursor-pointer border-4 ${manualSelection.top?.id === item.id ? 'border-pink-500' : 'border-transparent'}`}/>)}
+                                        {tops.map(item => <img key={item.id} src={item.imageUrl} alt="上衣" onClick={() => setManualSelection(prev => ({...prev, top: item}))} className={`w-28 h-36 object-cover rounded-lg flex-shrink-0 cursor-pointer border-4 ${manualSelection.top?.id === item.id ? 'border-pink-500' : 'border-transparent'}`}/>)}
                                     </div>
                                 </div>
                                 <div className="mt-6">
                                     <h3 className="font-semibold text-lg mb-2">選擇下身</h3>
                                     <div className="flex overflow-x-auto space-x-3 pb-3 -mx-4 px-4">
-                                        {bottoms.map(item => <img key={item.id} src={item.imageUrl} alt="Bottom" onClick={() => setManualSelection(prev => ({...prev, bottom: item}))} className={`w-28 h-36 object-cover rounded-lg flex-shrink-0 cursor-pointer border-4 ${manualSelection.bottom?.id === item.id ? 'border-pink-500' : 'border-transparent'}`}/>)}
+                                        {bottoms.map(item => <img key={item.id} src={item.imageUrl} alt="下身" onClick={() => setManualSelection(prev => ({...prev, bottom: item}))} className={`w-28 h-36 object-cover rounded-lg flex-shrink-0 cursor-pointer border-4 ${manualSelection.bottom?.id === item.id ? 'border-pink-500' : 'border-transparent'}`}/>)}
                                     </div>
                                 </div>
                                 {manualSelection.top && manualSelection.bottom && (
@@ -629,34 +635,6 @@ function App() {
                                 )}
                             </section>
                         )}
-                        {view === 'add' && (
-                            <section className="flex flex-col items-center justify-center p-4">
-                                <h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>
-                                {!activeProfile ? (
-                                     <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg w-full">
-                                        <h3 className="text-xl font-semibold text-yellow-800">請先建立使用者</h3>
-                                        <p className="text-yellow-700 mt-2">您需要先建立一個使用者（例如：媽媽），才能開始新增衣物喔！</p>
-                                        <button onClick={() => setProfileModalOpen(true)} className="mt-4 bg-pink-500 text-white font-bold py-2 px-4 rounded-lg">立即建立</button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <p className="text-gray-600 mb-6 text-center">您可以選擇開啟相機拍照，或從相簿選擇照片。</p>
-                                        <div className="w-full max-w-xs space-y-4">
-                                            <button onClick={() => setCameraOpen(true)} disabled={loading.upload} className="w-full bg-pink-500 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-pink-300">
-                                                <CameraIcon />
-                                                開啟相機
-                                            </button>
-                                             <button onClick={() => fileInputRef.current.click()} disabled={loading.upload} className="w-full bg-gray-700 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-gray-500">
-                                                <GalleryIcon />
-                                                從相簿選擇
-                                            </button>
-                                        </div>
-                                        <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-                                        {loading.upload && <div className="mt-4"><div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 處理中...</p></div></div>}
-                                    </>
-                                )}
-                            </section>
-                        )}
                         {view === 'gallery' && (
                             <section>
                                 <h2 className="text-2xl font-bold text-gray-800 mb-4">我的衣櫥</h2>
@@ -664,7 +642,7 @@ function App() {
                                     <div className="grid grid-cols-3 gap-2">
                                         {clothingItems.map(item => (
                                             <div key={item.id} className="relative group cursor-pointer" onClick={() => openEditModal(item)}>
-                                                <img src={item.imageUrl} alt="Clothing item" className="w-full h-32 object-cover rounded-md"/>
+                                                <img src={item.imageUrl} alt="衣物照片" className="w-full h-32 object-cover rounded-md"/>
                                                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex items-center justify-center">
                                                     <p className="text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">編輯</p>
                                                 </div>
@@ -675,7 +653,38 @@ function App() {
                             </section>
                         )}
                     </>
-                ))}
+                )}
+
+                {/* 狀況三：永遠獨立判斷是否顯示「新增衣物」頁面 */}
+                {view === 'add' && (
+                    <section className="flex flex-col items-center justify-center p-4">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>
+                        {!activeProfile ? (
+                                <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg w-full">
+                                <h3 className="text-xl font-semibold text-yellow-800">請先建立使用者</h3>
+                                <p className="text-yellow-700 mt-2">您需要先建立一個使用者（例如：媽媽），才能開始新增衣物喔！</p>
+                                <button onClick={() => setProfileModalOpen(true)} className="mt-4 bg-pink-500 text-white font-bold py-2 px-4 rounded-lg">立即建立</button>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-gray-600 mb-6 text-center">您可以選擇開啟相機拍照，或從相簿選擇照片。</p>
+                                <div className="w-full max-w-xs space-y-4">
+                                    <button onClick={() => setCameraOpen(true)} disabled={loading.upload} className="w-full bg-pink-500 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-pink-300">
+                                        <CameraIcon />
+                                        開啟相機
+                                    </button>
+                                        <button onClick={() => fileInputRef.current.click()} disabled={loading.upload} className="w-full bg-gray-700 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-gray-500">
+                                        <GalleryIcon />
+                                        從相簿選擇
+                                    </button>
+                                </div>
+                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
+                                {loading.upload && <div className="mt-4"><div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 處理中...</p></div></div>}
+                            </>
+                        )}
+                    </section>
+                )}
+
             </main>
             <footer className="bg-white border-t fixed bottom-0 left-0 right-0 max-w-md mx-auto z-10 p-2">
                 <nav className="flex justify-around">
