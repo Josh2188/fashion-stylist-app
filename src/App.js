@@ -93,7 +93,7 @@ function CameraCaptureModal({ onClose, onCapture }) {
                 <>
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover"></video>
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-[80vw] h-[80vw] max-w-[80vh] max-h-[80vh] border-4 border-dashed border-white/70 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"></div>
+                        <div className="camera-frame-cutout w-[80vw] h-[80vw] max-w-[80vh] max-h-[80vh] border-4 border-dashed border-white/70 rounded-lg"></div>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/50 flex justify-around items-center">
                         <button onClick={onClose} className="text-white font-semibold px-4 py-2">取消</button>
