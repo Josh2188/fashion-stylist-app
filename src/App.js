@@ -20,6 +20,7 @@ const SunIcon = createSvgIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2
 const LogOutIcon = createSvgIcon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>);
 const GoogleIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#FF3D00" d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 35.797 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>);
 
+// --- Camera Capture Modal Component ---
 function CameraCaptureModal({ onClose, onCapture }) {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -93,7 +94,7 @@ function CameraCaptureModal({ onClose, onCapture }) {
                 <>
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover"></video>
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="camera-frame-cutout w-[80vw] h-[80vw] max-w-[80vh] max-h-[80vh] border-4 border-dashed border-white/70 rounded-lg"></div>
+                        <div className="w-[80vw] h-[80vw] max-w-[80vh] max-h-[80vh] border-4 border-dashed border-white/70 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"></div>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/50 flex justify-around items-center">
                         <button onClick={onClose} className="text-white font-semibold px-4 py-2">取消</button>
