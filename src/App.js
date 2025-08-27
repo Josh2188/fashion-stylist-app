@@ -209,7 +209,7 @@ function App() {
             unsubMembers();
             unsubClothing();
         };
-    }, [user, activeMember]);
+    }, [user]);
 
     useEffect(() => {
         if (uploadQueue.length > 0 && !currentItemToClassify) {
@@ -337,7 +337,6 @@ function App() {
         try {
             const result = await callGeminiAPI('generate_suggestions', outfit);
             if (result && Array.isArray(result)) {
-                // Match descriptions back to actual items
                 const matchedSuggestions = result.map(sugg => {
                     return {
                         top: outfit.tops.find(i => i.description === sugg.top_desc) || null,
@@ -552,17 +551,67 @@ function App() {
                     <>
                         {view === 'suggestions' && (
                             <section>
-                                {/* ... Suggestions JSX ... */}
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2>
+                                    <button onClick={generateSuggestions} disabled={loading.suggestions} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50">
+                                        <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
+                                    </button>
+                                </div>
+                                {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : (
+                                    suggestions.length > 0 ? (
+                                        <div className="space-y-6">
+                                            {suggestions.map((s, i) => (
+                                                <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                                                    <div className="grid grid-cols-2">
+                                                        <img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover"/>
+                                                        <img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover"/>
+                                                    </div>
+                                                    <div className="p-4 bg-gray-50">
+                                                        <button onClick={() => setScoreReasoning(s)} className="w-full text-left">
+                                                            <p className="text-gray-700 italic">"{s.reasoning}"</p>
+                                                            <p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先為「{activeMember.name}」新增一些衣物吧！</p></div>
+                                )}
                             </section>
                         )}
                         {view === 'manual' && (
                             <section>
-                                {/* ... Manual JSX ... */}
+                                <h2 className="text-2xl font-bold text-gray-800 mb-4">自行搭配</h2>
+                                {/* ... Manual Outfit Selection UI ... */}
+                                <div className="mt-6 text-center">
+                                    <button onClick={scoreManualOutfit} disabled={loading.scoring} className="bg-pink-500 text-white font-bold py-3 px-6 rounded-full w-full flex items-center justify-center disabled:bg-pink-300">
+                                        {loading.scoring ? <RefreshCwIcon className="animate-spin mr-2"/> : <LightbulbIcon className="mr-2"/>}
+                                        {loading.scoring ? 'AI 評分中...' : '獲取 AI 評分'}
+                                    </button>
+                                    {manualScoreResult && (
+                                        <button onClick={() => setScoreReasoning(manualScoreResult)} className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg text-purple-800 w-full text-left">
+                                            <p>{manualScoreResult.reasoning}</p>
+                                            <p className="mt-2 text-lg font-bold text-right">AI 評分: {manualScoreResult.score}</p>
+                                        </button>
+                                    )}
+                                </div>
                             </section>
                         )}
                         {view === 'gallery' && (
                             <section>
-                                {/* ... Gallery JSX ... */}
+                                <h2 className="text-2xl font-bold text-gray-800 mb-4">我的衣櫥 - {activeMember.name}</h2>
+                                {memberItems.length > 0 ? (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {memberItems.map(item => (
+                                            <div key={item.id} className="relative group cursor-pointer" onClick={() => handleDeleteConfirmation(item)}>
+                                                <img src={item.imageUrl} alt="Clothing item" className="w-full h-32 object-cover rounded-md"/>
+                                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex items-center justify-center">
+                                                    <p className="text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">刪除</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥是空的</h3><p className="text-gray-500 mt-2">點擊下方的「新增衣物」按鈕，為「{activeMember.name}」建立數位衣櫥吧！</p></div>}
                             </section>
                         )}
                     </>
@@ -577,6 +626,54 @@ function App() {
                     <button onClick={() => setView('gallery')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'gallery' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><GalleryIcon /><span className="text-xs font-medium">我的衣櫥</span></button>
                 </nav>
             </footer>
+        </div>
+    );
+}
+
+// --- NEW: ClassificationModal Component ---
+function ClassificationModal({ item, members, onSave, onCancel, queueLength }) {
+    const [category, setCategory] = useState('top');
+    const [memberId, setMemberId] = useState(members[0]?.id || '');
+
+    useEffect(() => {
+        if (!memberId && members.length > 0) {
+            setMemberId(members[0].id);
+        }
+    }, [members, memberId]);
+
+    const handleSaveClick = () => {
+        if (!memberId) {
+            alert("請選擇一位成員！");
+            return;
+        }
+        onSave(item, category, memberId);
+    };
+
+    return (
+        <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+            <h3 className="text-xl font-semibold mb-4">分類衣物 ({queueLength} 張待處理)</h3>
+            <img src={item.preview} alt="Preview" className="w-full h-48 object-cover rounded-md mb-4"/>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">分類</label>
+                    <select value={category} onChange={e => setCategory(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md">
+                        <option value="top">上身</option>
+                        <option value="bottom">下身</option>
+                        <option value="dress">洋裝</option>
+                        <option value="outerwear">外套</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">屬於哪位成員？</label>
+                    <select value={memberId} onChange={e => setMemberId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md">
+                        {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                </div>
+            </div>
+            <div className="mt-6 flex justify-between">
+                <button onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded-md">跳過</button>
+                <button onClick={handleSaveClick} className="px-4 py-2 bg-pink-500 text-white rounded-md">儲存並繼續</button>
+            </div>
         </div>
     );
 }
