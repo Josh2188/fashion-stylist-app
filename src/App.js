@@ -3,7 +3,7 @@ import { auth, db, storage, onAuthStateChanged, googleProvider, signInWithPopup,
 import { collection, addDoc, query, onSnapshot, doc, deleteDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 
-// --- Icon Components ---
+// --- Icon Components (圖示元件) ---
 const createSvgIcon = (path) => (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 24} height={props.size || 24} viewBox="0 0 24 24" fill="none" stroke={props.color || 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>{path}</svg>
 );
@@ -21,6 +21,7 @@ const LogOutIcon = createSvgIcon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-
 const GoogleIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#FF3D00" d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 35.797 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>);
 const EditIcon = createSvgIcon(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>);
 
+// --- Component: CameraCaptureModal (相機捕捉彈窗) ---
 function CameraCaptureModal({ onClose, onCapture }) {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -108,8 +109,9 @@ function CameraCaptureModal({ onClose, onCapture }) {
     );
 }
 
-
+// --- Component: App (主應用程式) ---
 function App() {
+    // --- State Declarations (狀態宣告) ---
     const [user, setUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [members, setMembers] = useState([]);
@@ -133,6 +135,9 @@ function App() {
     const [manualScoreResult, setManualScoreResult] = useState(null);
     const [scoreReasoning, setScoreReasoning] = useState(null);
 
+    // --- useEffect Hooks (副作用掛鉤) ---
+
+    // 獲取天氣資訊
     useEffect(() => {
         const fetchWeather = (lat, lon) => {
             fetch(`/api/weather?lat=${lat}&lon=${lon}`)
@@ -152,11 +157,12 @@ function App() {
             () => {
                 console.error("Geolocation permission denied.");
                 setError("請允許位置權限以獲取天氣");
-                fetchWeather(24.9576, 121.2245);
+                fetchWeather(24.9576, 121.2245); // 預設位置 (中壢)
             }
         );
     }, []);
 
+    // 監聽使用者認證狀態
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
@@ -165,27 +171,7 @@ function App() {
         return () => unsub();
     }, []);
 
-    const handleSignIn = async () => {
-        try {
-            await signInWithPopup(auth, googleProvider);
-        } catch (error) {
-            console.error("Google Sign-In Error", error);
-            setError("Google 登入失敗，請稍後再試。");
-        }
-    };
-
-    const handleSignOut = async () => {
-        try {
-            await signOut(auth);
-            setMembers([]);
-            setActiveMember(null);
-            setClothingItems([]);
-        } catch (error) {
-            console.error("Sign-Out Error", error);
-            setError("登出失敗。");
-        }
-    };
-
+    // 監聽 Firestore 資料庫變動
     useEffect(() => {
         if (!user) return;
         
@@ -209,14 +195,18 @@ function App() {
             unsubMembers();
             unsubClothing();
         };
-    }, [user]);
+    }, [user, activeMember?.id]);
 
+    // 處理上傳佇列
     useEffect(() => {
         if (uploadQueue.length > 0 && !currentItemToClassify) {
             setCurrentItemToClassify(uploadQueue[0]);
         }
     }, [uploadQueue, currentItemToClassify]);
 
+    // --- API & Data Functions (API 與資料處理函式) ---
+
+    // 呼叫後端 Gemini API
     const callGeminiAPI = async (prompt, outfit) => {
         try {
             const response = await fetch('/api/gemini', {
@@ -236,7 +226,32 @@ function App() {
             return null;
         }
     };
-    
+
+    // --- Event Handlers (事件處理函式) ---
+
+    // 登入/登出
+    const handleSignIn = async () => {
+        try {
+            await signInWithPopup(auth, googleProvider);
+        } catch (error) {
+            console.error("Google Sign-In Error", error);
+            setError("Google 登入失敗，請稍後再試。");
+        }
+    };
+
+    const handleSignOut = async () => {
+        try {
+            await signOut(auth);
+            setMembers([]);
+            setActiveMember(null);
+            setClothingItems([]);
+        } catch (error) {
+            console.error("Sign-Out Error", error);
+            setError("登出失敗。");
+        }
+    };
+
+    // 成員管理
     const handleOpenMemberModal = (member = null) => {
         setEditingMember(member);
         setNewMemberName(member ? member.name : '');
@@ -259,6 +274,7 @@ function App() {
         setEditingMember(null);
     };
 
+    // 衣物上傳與分類
     const handleFilesSelected = (files) => {
         if (!files || files.length === 0) return;
         if (members.length === 0) {
@@ -316,7 +332,42 @@ function App() {
             }
         };
     };
+    
+    // **新增**：處理手動搭配選擇的函式
+    const handleManualSelect = (category, item) => {
+        setManualOutfit(prev => {
+            const isSelected = prev[category]?.id === item.id;
+            // 如果點擊的是已選中的項目，則取消選擇
+            if (isSelected) {
+                return { ...prev, [category]: null };
+            }
+            // 選擇洋裝時，清空上身和下身
+            if (category === 'dress') {
+                return {
+                    ...prev,
+                    top: null,
+                    bottom: null,
+                    dress: item,
+                };
+            }
+            // 選擇上身或下身時，清空洋裝
+            if (category === 'top' || category === 'bottom') {
+                return {
+                    ...prev,
+                    dress: null,
+                    [category]: item,
+                };
+            }
+            // 處理外套
+            return {
+                ...prev,
+                [category]: item,
+            };
+        });
+    };
 
+
+    // AI 功能
     const generateSuggestions = async () => {
         if (!activeMember) {
             setError("請先選擇一位成員。");
@@ -380,6 +431,7 @@ function App() {
         }
     };
 
+    // 衣物刪除
     const handleDeleteConfirmation = (item) => {
         setItemToDelete(item);
         setDeleteModalOpen(true);
@@ -393,6 +445,8 @@ function App() {
         } catch (error) { setError("刪除失敗。"); }
         setItemToDelete(null); setDeleteModalOpen(false);
     };
+    
+    // --- Render Logic (渲染邏輯) ---
     
     if (authLoading) {
         return (
@@ -426,8 +480,25 @@ function App() {
     const memberDresses = memberItems.filter(i => i.category === 'dress');
     const memberOutwears = memberItems.filter(i => i.category === 'outerwear');
 
+    // **新增**：渲染衣物網格的輔助函式
+    const renderClothingGrid = (items, category, selectedItem, onSelect, disabled = false) => {
+        if (items.length === 0) {
+            return <p className="text-sm text-gray-500 col-span-full">此分類沒有衣物。</p>;
+        }
+        return items.map(item => (
+            <div 
+                key={item.id} 
+                className={`cursor-pointer rounded-lg overflow-hidden border-2 ${selectedItem?.id === item.id ? 'border-pink-500' : 'border-transparent'} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
+                onClick={() => !disabled && onSelect(category, item)}
+            >
+                <img src={item.imageUrl} alt={item.description || 'clothing item'} className="w-full h-24 object-cover" />
+            </div>
+        ));
+    };
+
     return (
         <div className="max-w-md mx-auto bg-white shadow-lg min-h-screen relative">
+            {/* --- Modals (彈出視窗) --- */}
             {isCameraOpen && <CameraCaptureModal onClose={() => setCameraOpen(false)} onCapture={handleCapture} />}
             {currentItemToClassify && (
                 <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -481,6 +552,7 @@ function App() {
                 </div>
             )}
 
+            {/* --- Header (頁首) --- */}
             <header className="bg-white p-4 border-b sticky top-0 z-10 grid grid-cols-3 items-center">
                 <div className="flex items-center col-span-1">
                     <UserIcon className="text-pink-500" />
@@ -508,6 +580,7 @@ function App() {
                 </div>
             </header>
 
+            {/* --- Main Content (主要內容) --- */}
             <main className="p-4 pb-20">
                 {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4" role="alert">{error} <button onClick={() => setError('')} className="absolute top-0 bottom-0 right-0 px-4 py-3"><XIcon size={20}/></button></div>}
                 
@@ -518,6 +591,7 @@ function App() {
                     </div>
                 )}
 
+                {/* --- View: Add Clothing (新增衣物視圖) --- */}
                 {view === 'add' && (
                     <section className="flex flex-col items-center justify-center p-4">
                         <h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>
@@ -549,6 +623,7 @@ function App() {
 
                 {activeMember && (
                     <>
+                        {/* --- View: AI Suggestions (AI 推薦視圖) --- */}
                         {view === 'suggestions' && (
                             <section>
                                 <div className="flex justify-between items-center mb-4">
@@ -579,10 +654,45 @@ function App() {
                                 )}
                             </section>
                         )}
+                        {/* --- View: Manual Outfit (自行搭配視圖) --- */}
                         {view === 'manual' && (
                             <section>
                                 <h2 className="text-2xl font-bold text-gray-800 mb-4">自行搭配</h2>
-                                {/* ... Manual Outfit Selection UI ... */}
+                                
+                                <div className="space-y-6">
+                                    {/* 洋裝 */}
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-700 mb-2">洋裝</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {renderClothingGrid(memberDresses, 'dress', manualOutfit.dress, handleManualSelect)}
+                                        </div>
+                                    </div>
+
+                                    {/* 上身 */}
+                                    <div>
+                                        <h3 className={`text-lg font-semibold mb-2 ${manualOutfit.dress ? 'text-gray-400' : 'text-gray-700'}`}>上身</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {renderClothingGrid(memberTops, 'top', manualOutfit.top, handleManualSelect, !!manualOutfit.dress)}
+                                        </div>
+                                    </div>
+
+                                    {/* 下身 */}
+                                    <div>
+                                        <h3 className={`text-lg font-semibold mb-2 ${manualOutfit.dress ? 'text-gray-400' : 'text-gray-700'}`}>下身</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {renderClothingGrid(memberBottoms, 'bottom', manualOutfit.bottom, handleManualSelect, !!manualOutfit.dress)}
+                                        </div>
+                                    </div>
+
+                                    {/* 外套 */}
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-gray-700 mb-2">外套</h3>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {renderClothingGrid(memberOutwears, 'outerwear', manualOutfit.outerwear, handleManualSelect)}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="mt-6 text-center">
                                     <button onClick={scoreManualOutfit} disabled={loading.scoring} className="bg-pink-500 text-white font-bold py-3 px-6 rounded-full w-full flex items-center justify-center disabled:bg-pink-300">
                                         {loading.scoring ? <RefreshCwIcon className="animate-spin mr-2"/> : <LightbulbIcon className="mr-2"/>}
@@ -590,13 +700,14 @@ function App() {
                                     </button>
                                     {manualScoreResult && (
                                         <button onClick={() => setScoreReasoning(manualScoreResult)} className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg text-purple-800 w-full text-left">
-                                            <p>{manualScoreResult.reasoning}</p>
+                                            <p className="italic">"{manualScoreResult.reasoning}"</p>
                                             <p className="mt-2 text-lg font-bold text-right">AI 評分: {manualScoreResult.score}</p>
                                         </button>
                                     )}
                                 </div>
                             </section>
                         )}
+                        {/* --- View: Gallery (我的衣櫥視圖) --- */}
                         {view === 'gallery' && (
                             <section>
                                 <h2 className="text-2xl font-bold text-gray-800 mb-4">我的衣櫥 - {activeMember.name}</h2>
@@ -605,8 +716,8 @@ function App() {
                                         {memberItems.map(item => (
                                             <div key={item.id} className="relative group cursor-pointer" onClick={() => handleDeleteConfirmation(item)}>
                                                 <img src={item.imageUrl} alt="Clothing item" className="w-full h-32 object-cover rounded-md"/>
-                                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex items-center justify-center">
-                                                    <p className="text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">刪除</p>
+                                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex items-center justify-center rounded-md">
+                                                    <Trash2Icon className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                                                 </div>
                                             </div>
                                         ))}
@@ -618,10 +729,11 @@ function App() {
                 )}
             </main>
             
+            {/* --- Footer (頁尾導覽) --- */}
             <footer className="bg-white border-t fixed bottom-0 left-0 right-0 max-w-md mx-auto z-10 p-2">
                 <nav className="flex justify-around">
                     <button onClick={() => setView('suggestions')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'suggestions' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><Wand2Icon /><span className="text-xs font-medium">AI 推薦</span></button>
-                    <button onClick={() => setView('manual')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'manual' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><LightbulbIcon /><span className="text-xs font-medium">手動搭配</span></button>
+                    <button onClick={() => setView('manual')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'manual' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><LightbulbIcon /><span className="text-xs font-medium">自行搭配</span></button>
                     <button onClick={() => setView('add')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'add' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><CameraIcon /><span className="text-xs font-medium">新增衣物</span></button>
                     <button onClick={() => setView('gallery')} className={`flex flex-col items-center w-full p-2 rounded-lg ${view === 'gallery' ? 'text-pink-500 bg-pink-50' : 'text-gray-500'}`}><GalleryIcon /><span className="text-xs font-medium">我的衣櫥</span></button>
                 </nav>
@@ -630,7 +742,7 @@ function App() {
     );
 }
 
-// --- NEW: ClassificationModal Component ---
+// --- Component: ClassificationModal (分類彈窗) ---
 function ClassificationModal({ item, members, onSave, onCancel, queueLength }) {
     const [category, setCategory] = useState('top');
     const [memberId, setMemberId] = useState(members[0]?.id || '');
