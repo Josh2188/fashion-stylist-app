@@ -144,11 +144,44 @@ function App() {
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
+    // 【修正】重構天氣獲取邏輯
     useEffect(() => {
-        const fetchWeather = (lat, lon) => {
-            fetch(`/api/weather?lat=${lat}&lon=${lon}`).then(res => res.json()).then(data => { if (data.error) throw new Error(data.error); setWeather(data); }).catch(err => { console.error("Weather fetch error:", err); setError("無法獲取天氣資訊"); }).finally(() => setLoading(p => ({ ...p, weather: false })));
+        const fetchWeather = async (lat, lon) => {
+            setLoading(p => ({ ...p, weather: true }));
+            try {
+                const response = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                setWeather(data);
+                setError(''); // 成功獲取天氣後，清除所有錯誤訊息
+            } catch (err) {
+                console.error("Weather fetch error:", err);
+                setError("無法獲取天氣資訊，將使用預設地點。");
+            } finally {
+                setLoading(p => ({ ...p, weather: false }));
+            }
         };
-        navigator.geolocation.getCurrentPosition((pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude), () => { console.error("Geolocation permission denied."); setError("請允許位置權限以獲取天氣"); fetchWeather(24.9576, 121.2245); });
+
+        const getPosition = () => {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    // 成功獲取位置，清除可能存在的權限錯誤
+                    setError('');
+                    fetchWeather(pos.coords.latitude, pos.coords.longitude);
+                },
+                (err) => {
+                    // 獲取位置失敗（例如使用者拒絕）
+                    console.error("Geolocation error:", err.message);
+                    setError("請允許位置權限以獲取當地天氣。");
+                    // 使用預設地點（桃園）作為備案
+                    fetchWeather(24.9576, 121.2245);
+                }
+            );
+        };
+
+        getPosition();
     }, []);
 
     useEffect(() => {
@@ -367,7 +400,6 @@ function App() {
         try {
             const result = await callAPI('/api/gemini', { prompt: 'generate_suggestions', outfit, weather });
             if (result && Array.isArray(result.response)) {
-                // 【修正】改用 ID 進行精準比對，而不是用文字描述
                 const matchedSuggestions = result.response.map(sugg => ({
                     top: outfit.tops.find(i => i.id === sugg.top_id) || null,
                     bottom: outfit.bottoms.find(i => i.id === sugg.bottom_id) || null,
@@ -483,7 +515,13 @@ function App() {
                     <>
                         {view === 'suggestions' && (
                             <section>
-                                <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2><button onClick={generateSuggestions} disabled={loading.suggestions} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50"><RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/></button></div>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2>
+                                    {/* 【修正】在天氣載入完成前，禁用推薦按鈕 */}
+                                    <button onClick={generateSuggestions} disabled={loading.suggestions || loading.weather} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50">
+                                        <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
+                                    </button>
+                                </div>
                                 {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : ( suggestions.length > 0 ? ( <div className="space-y-6">{suggestions.map((s, i) => ( <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="grid grid-cols-2"><img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.top?.imageUrl || s.dress?.imageUrl)}/><img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.bottom?.imageUrl || s.outerwear?.imageUrl)}/></div><div className="p-4 bg-gray-50"><button onClick={() => setScoreReasoning(s)} className="w-full text-left"><p className="text-gray-700 italic">"{s.reasoning}"</p><p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p></button></div></div> ))}</div> ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先為「{activeMember.name}」新增一些衣物吧！</p></div> )}
                             </section>
                         )}
