@@ -71,18 +71,30 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: '僅允許 POST 請求' });
   }
 
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  // 1. 檢查 API Key 是否存在於環境變數中
+  if (!apiKey) {
+    console.error("API 錯誤: 找不到 GEMINI_API_KEY 環境變數。");
+    return res.status(500).json({ error: "伺服器設定錯誤：找不到 API 金鑰。" });
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
   try {
-    // 檢查 API Key 是否存在
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error("找不到 GEMINI_API_KEY，請在伺服器環境變數中設定。");
-    }
+    // 2. **新增：API 金鑰健康檢查**
+    // 執行一個非常簡單的請求來驗證金鑰是否有效
+    await model.countTokens("test");
 
-    // 初始化 AI 模型
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-    });
+  } catch (error) {
+    console.error('API 金鑰驗證失敗:', error);
+    // 如果金鑰驗證失敗，回傳一個特定的錯誤訊息
+    return res.status(500).json({ error: "Gemini API 金鑰驗證失敗。請檢查您的金鑰是否正確、已啟用，且帳戶有足夠的額度。" });
+  }
 
+
+  try {
     // 從請求中獲取資料
     const { prompt: task, outfit, weather } = req.body;
 
@@ -94,7 +106,6 @@ export default async function handler(req, res) {
 
     // 根據任務類型設定 AI 回應的格式
     if (task === 'generate_suggestions') {
-      // 要求 AI 回傳三套建議的 JSON 格式
       schema = {
         type: "ARRAY",
         items: {
@@ -111,7 +122,6 @@ export default async function handler(req, res) {
         }
       };
     } else if (task === 'score_outfit') {
-      // 要求 AI 回傳評分的 JSON 格式
       schema = {
         type: "OBJECT",
         properties: {
@@ -139,24 +149,18 @@ export default async function handler(req, res) {
     const responseText = result.response.text();
     let responseObject;
 
-    // **新增：更安全的 JSON 解析**
-    // 嘗試解析 AI 回傳的文字，如果失敗則拋出錯誤
     try {
         responseObject = JSON.parse(responseText);
     } catch (e) {
-        // 在後台記錄下 AI 回傳的原始文字，方便除錯
         console.error("Gemini 回應的原始文字 (非JSON):", responseText);
-        // 拋出一個新的、更明確的錯誤
         throw new Error("AI 回應的格式並非有效的 JSON。");
     }
-
 
     // 回傳成功的結果
     res.status(200).json({ response: responseObject });
 
   } catch (error) {
-    // 統一的錯誤處理
-    console.error('API 錯誤:', error);
+    console.error('API 任務執行錯誤:', error);
     res.status(500).json({ error: `伺服器內部錯誤: ${error.message}` });
   }
 }
