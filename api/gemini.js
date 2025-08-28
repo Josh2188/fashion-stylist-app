@@ -1,8 +1,8 @@
 // /api/gemini.js
 
-// 引入 Google Generative AI SDK
+// 引入 Google Generative AI SDK (僅用於圖片處理)
 import { GoogleGenerativeAI } from "@google/generative-ai";
-// Node.js v18+ 內建了 fetch
+// Node.js v18+ 內建了 fetch，我們將用它來直接呼叫 REST API
 import fetch from 'node-fetch';
 
 // --- Helper Functions (輔助函式) ---
@@ -50,12 +50,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
     const { prompt: task, outfit, weather, imageUrl } = req.body;
 
+    // 任務：描述圖片 (維持使用 SDK，因為此部分未出錯)
     if (task === 'describe_image') {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         if (!imageUrl) {
             return res.status(400).json({ error: '缺少圖片網址' });
         }
@@ -75,13 +75,12 @@ export default async function handler(req, res) {
             },
         };
         
-        // For image description, the format [prompt, image] is correct.
         const result = await model.generateContent([prompt, imagePart]);
         const description = result.response.text().trim();
         return res.status(200).json({ response: { description: description } });
     }
 
-    // --- 以下為處理文字任務的既有邏輯 ---
+    // --- 【最終修正】任務：文字生成 (改用直接的 REST API 呼叫) ---
     const fullPrompt = createPrompt(weather, outfit, task);
     let schema;
 
@@ -92,22 +91,45 @@ export default async function handler(req, res) {
     } else {
       return res.status(400).json({ error: '無效的任務類型' });
     }
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
-    // 【二次修正】直接傳遞 prompt 字串和 generationConfig 物件，而不是將 prompt 包在複雜的 contents 結構中。
-    // 這是針對純文字生成並要求 JSON 輸出的正確呼叫方式。
-    const modelWithConfig = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
-        generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+    const payload = {
+      contents: [{
+        parts: [{ text: fullPrompt }]
+      }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: schema
+      }
+    };
+
+    const apiResponse = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
-    const result = await modelWithConfig.generateContent(fullPrompt);
+    if (!apiResponse.ok) {
+      const errorBody = await apiResponse.json();
+      console.error("Gemini API Error:", errorBody);
+      throw new Error(`API 請求失敗，狀態碼: ${apiResponse.status}. ${errorBody.error?.message || '未知錯誤'}`);
+    }
+
+    const result = await apiResponse.json();
     
-    const responseText = result.response.text();
+    // 從 REST API 回應中提取純文字內容，這個內容本身就是一個 JSON 字串
+    if (!result.candidates || !result.candidates[0].content.parts[0].text) {
+        throw new Error("API 回應格式不正確，找不到生成的內容。");
+    }
+    const responseText = result.candidates[0].content.parts[0].text;
     const responseObject = JSON.parse(responseText);
+    
     res.status(200).json({ response: responseObject });
 
   } catch (error) {
     console.error('API 執行錯誤:', error);
+    // 確保即使在 catch 區塊中，也回傳 JSON 格式的錯誤
     res.status(500).json({ error: `伺服器內部錯誤: ${error.message}` });
   }
 }
