@@ -96,7 +96,8 @@ export default async function handler(req, res) {
     }
     
     const generationConfig = { responseMimeType: "application/json", responseSchema: schema };
-    const result = await model.generateContent({ contents: [{ role: "user", parts: [{ text: fullPrompt }] }], generationConfig });
+    // 【修正】移除 "role: 'user'"，將其視為單純的內容生成請求，而非對話請求。
+    const result = await model.generateContent({ contents: [{ parts: [{ text: fullPrompt }] }], generationConfig });
     
     const responseText = result.response.text();
     const responseObject = JSON.parse(responseText);
