@@ -19,6 +19,7 @@ const GalleryIcon = createSvgIcon(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 
 const SunIcon = createSvgIcon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></>);
 const LogOutIcon = createSvgIcon(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>);
 const SparklesIcon = createSvgIcon(<><path d="m12 3-1.9 1.9-1.3-2.8-1.3 2.8L5.6 3l1.9 1.9L5.6 6.8l1.9-1.9 1.9 1.9 2.8-1.3-2.8-1.3L12 3Z" /><path d="M21 12 l-1.9-1.9-2.8 1.3 2.8 1.3 1.9 1.9-1.9 1.9 1.3 2.8 1.3-2.8 1.9-1.9-1.9-1.9Z" /><path d="M12 21l1.9-1.9 1.3 2.8 1.3-2.8 1.9 1.9-1.9-1.9-2.8-1.3 2.8-1.3-1.9-1.9 1.9-1.9Z" /></>);
+const AlertTriangleIcon = createSvgIcon(<><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>);
 const GoogleIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#FF3D00" d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 35.797 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>);
 const EditIcon = createSvgIcon(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>);
 
@@ -119,7 +120,7 @@ function App() {
     const [activeMember, setActiveMember] = useState(null);
     const [clothingItems, setClothingItems] = useState([]);
     const [view, setView] = useState('suggestions');
-    const [loading, setLoading] = useState({ suggestions: false, upload: false, weather: true, scoring: false, optimization: false, duplicateCheck: false });
+    const [loading, setLoading] = useState({ suggestions: false, upload: false, weather: true, scoring: false, optimization: false });
     const [error, setError] = useState('');
     const fileInputRef = useRef(null);
     const [isMemberModalOpen, setMemberModalOpen] = useState(false);
@@ -136,8 +137,10 @@ function App() {
     const [manualScoreResult, setManualScoreResult] = useState(null);
     const [scoreReasoning, setScoreReasoning] = useState(null);
     const [optimizationStatus, setOptimizationStatus] = useState('');
-    const [isDuplicateModalOpen, setDuplicateModalOpen] = useState(false); // **新增：重複檢查彈窗狀態**
-    const [duplicateCheckData, setDuplicateCheckData] = useState(null); // **新增：重複檢查資料**
+    const [itemToReview, setItemToReview] = useState(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+    const [imageToView, setImageToView] = useState(null); // **新增：查看大圖的狀態**
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
@@ -180,30 +183,36 @@ function App() {
 
     useEffect(() => {
         if (!activeMember || clothingItems.length === 0 || loading.optimization) return;
-        const itemsToAnalyze = clothingItems.filter(item => item.memberId === activeMember.id && !item.isAnalyzed);
-        if (itemsToAnalyze.length === 0) { setOptimizationStatus(''); return; }
         
-        const runOptimization = async () => {
-            setLoading(p => ({ ...p, optimization: true }));
-            setOptimizationStatus(`正在為 ${activeMember.name} 優化 ${itemsToAnalyze.length} 件衣物...`);
-            try {
+        const runBackgroundTasks = async () => {
+            const itemsToAnalyze = clothingItems.filter(item => item.memberId === activeMember.id && !item.isAnalyzed);
+            if (itemsToAnalyze.length > 0) {
+                setLoading(p => ({ ...p, optimization: true }));
+                setOptimizationStatus(`正在為 ${activeMember.name} 優化 ${itemsToAnalyze.length} 件衣物...`);
                 for (const item of itemsToAnalyze) {
-                    const result = await callGeminiAPI('describe_image', { imageUrl: item.imageUrl });
-                    if (result && result.description) {
-                        await updateDoc(doc(db, "clothingItems", item.id), { description: result.description, isAnalyzed: true });
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 1000)); 
+                    try {
+                        const result = await callAPI('/api/gemini', { prompt: 'describe_image', imageUrl: item.imageUrl });
+                        if (result && result.response && result.response.description) {
+                            await updateDoc(doc(db, "clothingItems", item.id), { description: result.response.description, isAnalyzed: true });
+                        }
+                    } catch (e) { console.error(`Failed to optimize item ${item.id}`, e); }
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 setOptimizationStatus(`衣櫥優化完成！`);
-            } catch (err) {
-                console.error("Auto-optimization error:", err);
-                setOptimizationStatus("優化過程中發生錯誤。");
-            } finally {
-                setLoading(p => ({ ...p, optimization: false }));
                 setTimeout(() => setOptimizationStatus(''), 3000);
+                setLoading(p => ({ ...p, optimization: false }));
+            }
+
+            const itemsToCheck = clothingItems.filter(item => item.memberId === activeMember.id && item.duplicateStatus === 'unchecked');
+            if (itemsToCheck.length > 0) {
+                 for (const item of itemsToCheck) {
+                    callAPI('/api/background-check', { itemId: item.id, memberId: activeMember.id });
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                 }
             }
         };
-        runOptimization();
+        
+        runBackgroundTasks();
     }, [activeMember, clothingItems]);
 
 
@@ -240,40 +249,10 @@ function App() {
         reader.onerror = error => reject(error);
     });
 
-    // **修改：上傳流程現在包含重複檢查**
-    const processAndCheckFile = async (file) => {
-        if (!activeMember) {
-            setError("請先選擇一個成員才能上傳衣物。");
-            return;
-        }
-        setLoading(p => ({ ...p, duplicateCheck: true }));
-        setError('');
-        
-        try {
-            const base64 = await fileToBase64(file);
-            const memberItems = clothingItems.filter(item => item.memberId === activeMember.id);
-
-            const result = await callAPI('/api/check-duplicate', { newImageBase64: base64, existingItems: memberItems });
-
-            if (result && result.isDuplicate) {
-                setDuplicateCheckData({ newFile: file, potentialMatch: result.matchingItem });
-                setDuplicateModalOpen(true);
-            } else {
-                // 如果不是重複的，直接加入佇列進行手動分類
-                handleFilesSelected([file]);
-            }
-        } catch (err) {
-            setError("比對重複衣物時發生錯誤，將直接進入分類步驟。");
-            handleFilesSelected([file]); // 即使比對失敗，也讓使用者可以繼續上傳
-        } finally {
-            setLoading(p => ({ ...p, duplicateCheck: false }));
-        }
-    };
-
     const handleFileSelectFromPicker = (event) => {
         const file = event.target.files[0];
         if (file) {
-            processAndCheckFile(file);
+            handleFilesSelected([file]);
         }
         event.target.value = null;
     };
@@ -281,7 +260,7 @@ function App() {
         setCameraOpen(false);
         const fileName = `capture-${Date.now()}.jpg`;
         const file = new File([imageBlob], fileName, { type: 'image/jpeg' });
-        processAndCheckFile(file);
+        handleFilesSelected([file]);
     };
 
     const handleFilesSelected = (files) => {
@@ -307,6 +286,7 @@ function App() {
                 category: category,
                 description: `${memberName}的${category}`,
                 isAnalyzed: false,
+                duplicateStatus: 'unchecked',
                 createdAt: new Date() 
             });
             
@@ -320,6 +300,46 @@ function App() {
         }
     };
     
+    const openEditModal = (item) => {
+        if (item.duplicateStatus === 'needs_review') {
+            setItemToReview(item);
+        } else {
+            setEditingItem(item);
+            setIsEditModalOpen(true);
+        }
+    };
+
+    const handleUpdateItem = async (newCategory, newMemberId) => {
+        if (!editingItem) return;
+        try {
+            const memberName = members.find(m => m.id === newMemberId)?.name || '成員';
+            const newDescription = `${memberName}的${newCategory}`;
+            
+            await updateDoc(doc(db, "clothingItems", editingItem.id), {
+                category: newCategory,
+                memberId: newMemberId,
+                description: newDescription,
+                isAnalyzed: false,
+                duplicateStatus: 'unchecked'
+            });
+        } catch (error) {
+            setError("更新衣物失敗。");
+        }
+        setIsEditModalOpen(false);
+        setEditingItem(null);
+    };
+    
+    const handleResolveDuplicate = async (item, isDuplicate) => {
+        if (isDuplicate) {
+            await confirmDeleteItem(item);
+        } else {
+            await updateDoc(doc(db, "clothingItems", item.id), {
+                duplicateStatus: 'resolved_as_unique'
+            });
+        }
+        setItemToReview(null);
+    };
+
     const handleManualSelect = (category, item) => {
         setManualOutfit(prev => {
             const isSelected = prev[category]?.id === item.id;
@@ -358,11 +378,11 @@ function App() {
         } catch (e) { setError("AI 評分時發生錯誤。"); } finally { setLoading(p => ({ ...p, scoring: false })); }
     };
 
-    const handleDeleteConfirmation = (item) => { setItemToDelete(item); setDeleteModalOpen(true); };
-    const confirmDeleteItem = async () => {
-        if (!itemToDelete) return;
-        try { await deleteDoc(doc(db, "clothingItems", itemToDelete.id)); await deleteObject(ref(storage, itemToDelete.storagePath)); } catch (error) { setError("刪除失敗。"); }
-        setItemToDelete(null); setDeleteModalOpen(false);
+    const confirmDeleteItem = async (item) => {
+        const itemToDeleteFinal = item || itemToDelete;
+        if (!itemToDeleteFinal) return;
+        try { await deleteDoc(doc(db, "clothingItems", itemToDeleteFinal.id)); await deleteObject(ref(storage, itemToDeleteFinal.storagePath)); } catch (error) { setError("刪除失敗。"); }
+        setItemToDelete(null); setDeleteModalOpen(false); setIsEditModalOpen(false);
     };
     
     // --- Render Logic (渲染邏輯) ---
@@ -393,31 +413,31 @@ function App() {
                     <ClassificationModal item={currentItemToClassify} members={members} onSave={handleSaveClassification} onCancel={() => { setUploadQueue(prev => prev.slice(1)); setCurrentItemToClassify(null); }} queueLength={uploadQueue.length} />
                 </div>
             )}
-            {isDuplicateModalOpen && (
-                <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center">
-                        <h3 className="text-xl font-semibold mb-4">重複確認</h3>
-                        <p className="text-gray-600 mb-4">這件衣服似乎已經在您的衣櫥裡了。請問是同一件嗎？</p>
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            <div>
-                                <p className="text-sm font-medium mb-1">新上傳的</p>
-                                <img src={URL.createObjectURL(duplicateCheckData.newFile)} alt="New upload" className="w-full h-32 object-cover rounded-md"/>
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium mb-1">已存在的</p>
-                                <img src={duplicateCheckData.potentialMatch.imageUrl} alt="Existing item" className="w-full h-32 object-cover rounded-md"/>
-                            </div>
-                        </div>
-                        <div className="flex justify-around space-x-4">
-                            <button onClick={() => { setDuplicateModalOpen(false); handleFilesSelected([duplicateCheckData.newFile]); }} className="px-6 py-2 bg-gray-200 rounded-md w-full">不是，仍要上傳</button>
-                            <button onClick={() => setDuplicateModalOpen(false)} className="px-6 py-2 bg-pink-500 text-white rounded-md w-full">是，取消上傳</button>
-                        </div>
-                    </div>
-                </div>
+            {itemToReview && (
+                <DuplicateReviewModal 
+                    item={itemToReview}
+                    allItems={clothingItems}
+                    onResolve={handleResolveDuplicate}
+                    onClose={() => setItemToReview(null)}
+                    onViewImage={setImageToView}
+                />
             )}
             {isMemberModalOpen && ( <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-lg p-6 w-full max-w-sm"><h3 className="text-lg font-semibold mb-4">{editingMember ? '編輯成員名稱' : '新增成員'}</h3><input type="text" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} placeholder="例如：媽媽、女兒" className="w-full border rounded-md px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-pink-500" /><div className="flex justify-end space-x-2"><button onClick={() => setMemberModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded-md">取消</button><button onClick={handleSaveMember} className="px-4 py-2 bg-pink-500 text-white rounded-md">儲存</button></div></div></div> )}
-            {isDeleteModalOpen && ( <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-lg p-6 w-full max-w-sm text-center"><h3 className="text-lg font-semibold mb-2">確定刪除？</h3><p className="text-gray-600 mb-6">您確定要刪除這件衣物嗎？此操作無法復原。</p><div className="flex justify-center space-x-4"><button onClick={() => setDeleteModalOpen(false)} className="px-6 py-2 bg-gray-200 rounded-md">取消</button><button onClick={confirmDeleteItem} className="px-6 py-2 bg-red-500 text-white rounded-md">刪除</button></div></div></div> )}
+            {isDeleteModalOpen && ( <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-lg p-6 w-full max-w-sm text-center"><h3 className="text-lg font-semibold mb-2">確定刪除？</h3><p className="text-gray-600 mb-6">您確定要刪除這件衣物嗎？此操作無法復原。</p><div className="flex justify-center space-x-4"><button onClick={() => setDeleteModalOpen(false)} className="px-6 py-2 bg-gray-200 rounded-md">取消</button><button onClick={() => confirmDeleteItem()} className="px-6 py-2 bg-red-500 text-white rounded-md">刪除</button></div></div></div> )}
             {scoreReasoning && ( <div className="absolute inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4"><div className="bg-white rounded-lg p-6 w-full max-w-sm relative"><button onClick={() => setScoreReasoning(null)} className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-800"><XIcon size={24} /></button><h3 className="text-xl font-semibold mb-2 text-center">AI 評分解析</h3><div className="text-center mb-4"><span className="text-6xl font-bold text-pink-500">{scoreReasoning.score}</span><span className="text-xl font-semibold text-gray-600"> / 100</span></div><p className="text-gray-700">{scoreReasoning.reasoning}</p></div></div> )}
+            {isEditModalOpen && editingItem && (
+                 <EditItemModal 
+                    item={editingItem}
+                    members={members}
+                    onClose={() => setIsEditModalOpen(false)}
+                    onSave={handleUpdateItem}
+                    onDelete={confirmDeleteItem}
+                    onViewImage={setImageToView}
+                 />
+            )}
+            {imageToView && (
+                <ImageViewerModal imageUrl={imageToView} onClose={() => setImageToView(null)} />
+            )}
 
             <header className="bg-white p-4 border-b sticky top-0 z-10 grid grid-cols-3 items-center">
                 <div className="flex items-center col-span-1"><UserIcon className="text-pink-500" /><select value={activeMember?.id || ''} onChange={(e) => setActiveMember(members.find(m => m.id === e.target.value))} className="ml-2 font-semibold text-lg border-none bg-transparent focus:ring-0" disabled={members.length === 0}>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button onClick={() => handleOpenMemberModal(activeMember)} className="p-1 text-gray-400 hover:text-gray-600" disabled={!activeMember}><EditIcon size={16}/></button></div>
@@ -437,14 +457,14 @@ function App() {
 
                 {view !== 'add' && !activeMember && ( <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">歡迎！</h3><p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位成員，開始您的智慧穿搭之旅。</p></div> )}
 
-                {view === 'add' && ( <section className="flex flex-col items-center justify-center p-4"><h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>{!activeMember ? ( <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg w-full"><h3 className="text-xl font-semibold text-yellow-800">請先建立成員</h3><p className="text-yellow-700 mt-2">您需要先建立一個成員，才能開始新增衣物喔！</p><button onClick={() => handleOpenMemberModal(null)} className="mt-4 bg-pink-500 text-white font-bold py-2 px-4 rounded-lg">立即建立</button></div> ) : ( <> <p className="text-gray-600 mb-6 text-center">您可以選擇開啟相機拍照，或從相簿選擇照片。</p><div className="w-full max-w-xs space-y-4"><button onClick={() => setCameraOpen(true)} disabled={loading.upload || loading.duplicateCheck} className="w-full bg-pink-500 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-pink-300"><CameraIcon />開啟相機</button><button onClick={() => fileInputRef.current.click()} disabled={loading.upload || loading.duplicateCheck} className="w-full bg-gray-700 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-gray-500"><GalleryIcon />從相簿選擇</button></div><input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileSelectFromPicker} className="hidden" /></> )} </section> )}
+                {view === 'add' && ( <section className="flex flex-col items-center justify-center p-4"><h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>{!activeMember ? ( <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg w-full"><h3 className="text-xl font-semibold text-yellow-800">請先建立成員</h3><p className="text-yellow-700 mt-2">您需要先建立一個成員，才能開始新增衣物喔！</p><button onClick={() => handleOpenMemberModal(null)} className="mt-4 bg-pink-500 text-white font-bold py-2 px-4 rounded-lg">立即建立</button></div> ) : ( <> <p className="text-gray-600 mb-6 text-center">您可以選擇開啟相機拍照，或從相簿選擇照片。</p><div className="w-full max-w-xs space-y-4"><button onClick={() => setCameraOpen(true)} disabled={loading.upload} className="w-full bg-pink-500 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-pink-300"><CameraIcon />開啟相機</button><button onClick={() => fileInputRef.current.click()} disabled={loading.upload} className="w-full bg-gray-700 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-gray-500"><GalleryIcon />從相簿選擇</button></div><input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileSelectFromPicker} className="hidden" /></> )} </section> )}
 
                 {activeMember && (
                     <>
                         {view === 'suggestions' && (
                             <section>
                                 <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2><button onClick={generateSuggestions} disabled={loading.suggestions} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50"><RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/></button></div>
-                                {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : ( suggestions.length > 0 ? ( <div className="space-y-6">{suggestions.map((s, i) => ( <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="grid grid-cols-2"><img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover"/><img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover"/></div><div className="p-4 bg-gray-50"><button onClick={() => setScoreReasoning(s)} className="w-full text-left"><p className="text-gray-700 italic">"{s.reasoning}"</p><p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p></button></div></div> ))}</div> ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先為「{activeMember.name}」新增一些衣物吧！</p></div> )}
+                                {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : ( suggestions.length > 0 ? ( <div className="space-y-6">{suggestions.map((s, i) => ( <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="grid grid-cols-2"><img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.top?.imageUrl || s.dress?.imageUrl)}/><img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.bottom?.imageUrl || s.outerwear?.imageUrl)}/></div><div className="p-4 bg-gray-50"><button onClick={() => setScoreReasoning(s)} className="w-full text-left"><p className="text-gray-700 italic">"{s.reasoning}"</p><p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p></button></div></div> ))}</div> ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先為「{activeMember.name}」新增一些衣物吧！</p></div> )}
                             </section>
                         )}
                         {view === 'manual' && (
@@ -465,15 +485,20 @@ function App() {
                                 {memberItems.length > 0 ? (
                                     <div className="grid grid-cols-3 gap-2">
                                         {memberItems.map(item => (
-                                            <div key={item.id} className="relative group cursor-pointer" onClick={() => handleDeleteConfirmation(item)}>
+                                            <div key={item.id} className="relative group cursor-pointer" onClick={() => openEditModal(item)}>
                                                 <img src={item.imageUrl} alt={item.description} className="w-full h-32 object-cover rounded-md"/>
                                                 {!item.isAnalyzed && (
                                                     <div className="absolute top-1 right-1 bg-yellow-400 p-1 rounded-full" title="等待 AI 優化">
                                                         <SparklesIcon size={12} color="white" />
                                                     </div>
                                                 )}
+                                                {item.duplicateStatus === 'needs_review' && (
+                                                    <div className="absolute top-1 left-1 bg-red-500 p-1 rounded-full" title="發現可能重複的項目">
+                                                        <AlertTriangleIcon size={12} color="white" />
+                                                    </div>
+                                                )}
                                                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-300 flex items-center justify-center rounded-md">
-                                                    <Trash2Icon className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                    <p className="text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity">編輯</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -540,6 +565,88 @@ function ClassificationModal({ item, members, onSave, onCancel, queueLength }) {
             <div className="mt-6 flex justify-between">
                 <button onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded-md">跳過</button>
                 <button onClick={handleSaveClick} className="px-4 py-2 bg-pink-500 text-white rounded-md">儲存並繼續</button>
+            </div>
+        </div>
+    );
+}
+
+// --- Component: EditItemModal (編輯衣物彈窗) ---
+function EditItemModal({ item, members, onClose, onSave, onDelete, onViewImage }) {
+    const [category, setCategory] = useState(item.category);
+    const [memberId, setMemberId] = useState(item.memberId);
+
+    return (
+        <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg p-6 w-full max-w-sm relative">
+                <button onClick={onClose} className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-800"><XIcon size={24} /></button>
+                <h3 className="text-xl font-semibold mb-4">編輯衣物</h3>
+                <img src={item.imageUrl} alt="Editing item" className="w-full h-48 object-cover rounded-md mb-4 cursor-pointer" onClick={() => onViewImage(item.imageUrl)}/>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">分類</label>
+                        <select value={category} onChange={e => setCategory(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md">
+                            <option value="top">上身</option>
+                            <option value="bottom">下身</option>
+                            <option value="dress">洋裝</option>
+                            <option value="outerwear">外套</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">屬於哪位成員？</label>
+                        <select value={memberId} onChange={e => setMemberId(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm rounded-md">
+                            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <div className="mt-6 flex justify-between items-center">
+                    <button onClick={() => onDelete(item)} className="p-2 text-red-600 hover:bg-red-50 rounded-full"><Trash2Icon size={24}/></button>
+                    <button onClick={() => onSave(category, memberId)} className="px-6 py-2 bg-pink-500 text-white font-semibold rounded-md hover:bg-pink-600">儲存變更</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- Component: DuplicateReviewModal (重複審核彈窗) ---
+function DuplicateReviewModal({ item, allItems, onClose, onResolve, onViewImage }) {
+    const potentialMatch = allItems.find(i => i.id === item.potentialMatchId);
+
+    if (!potentialMatch) {
+        onClose();
+        return null;
+    }
+
+    return (
+        <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center">
+                <h3 className="text-xl font-semibold mb-4">AI 發現可能重複的衣物</h3>
+                <p className="text-gray-600 mb-4">請確認這兩件衣物是否為同一件？</p>
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div>
+                        <p className="text-sm font-medium mb-1">新上傳的</p>
+                        <img src={item.imageUrl} alt="New item" className="w-full h-32 object-cover rounded-md cursor-pointer" onClick={() => onViewImage(item.imageUrl)}/>
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium mb-1">已存在的</p>
+                        <img src={potentialMatch.imageUrl} alt="Existing item" className="w-full h-32 object-cover rounded-md cursor-pointer" onClick={() => onViewImage(potentialMatch.imageUrl)}/>
+                    </div>
+                </div>
+                <div className="flex flex-col space-y-2">
+                    <button onClick={() => onResolve(item, false)} className="px-6 py-2 bg-gray-600 text-white rounded-md w-full">不是，這是兩件不同的衣服</button>
+                    <button onClick={() => onResolve(item, true)} className="px-6 py-2 bg-red-500 text-white rounded-md w-full">是同一件，請刪除新的</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// **新增：圖片檢視器彈窗元件**
+function ImageViewerModal({ imageUrl, onClose }) {
+    return (
+        <div className="absolute inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="relative">
+                <button onClick={onClose} className="absolute -top-4 -right-4 p-2 bg-white rounded-full text-gray-800 hover:bg-gray-200"><XIcon size={24} /></button>
+                <img src={imageUrl} alt="Full view" className="max-w-[90vw] max-h-[90vh] object-contain"/>
             </div>
         </div>
     );
