@@ -144,44 +144,69 @@ function App() {
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
-    // 【修正】重構天氣獲取邏輯
+    // 【最終修正】重構天氣與位置獲取邏輯
     useEffect(() => {
         const fetchWeather = async (lat, lon) => {
             setLoading(p => ({ ...p, weather: true }));
+            // 清除任何先前與天氣或位置相關的錯誤訊息
+            setError(prev => (prev.includes("天氣") || prev.includes("位置")) ? "" : prev);
             try {
                 const response = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+                if (!response.ok) throw new Error('天氣伺服器回應錯誤');
                 const data = await response.json();
-                if (data.error) {
-                    throw new Error(data.error);
-                }
+                if (data.error) throw new Error(data.error);
                 setWeather(data);
-                setError(''); // 成功獲取天氣後，清除所有錯誤訊息
             } catch (err) {
                 console.error("Weather fetch error:", err);
-                setError("無法獲取天氣資訊，將使用預設地點。");
+                setError("無法獲取天氣資訊。");
             } finally {
                 setLoading(p => ({ ...p, weather: false }));
             }
         };
 
-        const getPosition = () => {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    // 成功獲取位置，清除可能存在的權限錯誤
-                    setError('');
-                    fetchWeather(pos.coords.latitude, pos.coords.longitude);
-                },
-                (err) => {
-                    // 獲取位置失敗（例如使用者拒絕）
-                    console.error("Geolocation error:", err.message);
-                    setError("請允許位置權限以獲取當地天氣。");
-                    // 使用預設地點（桃園）作為備案
-                    fetchWeather(24.9576, 121.2245);
+        const handleLocation = async () => {
+            // 首先檢查瀏覽器是否支援 Geolocation API
+            if (!navigator.geolocation) {
+                setError("您的瀏覽器不支援位置定位，將使用預設地點。");
+                await fetchWeather(24.9576, 121.2245); // 備案：使用桃園市
+                return;
+            }
+
+            try {
+                // 使用 Permissions API 檢查權限狀態，更可靠
+                const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+
+                const getPosition = () => new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000, // 增加 10 秒的超時設定
+                        maximumAge: 0
+                    });
+                });
+
+                if (permissionStatus.state === 'granted') {
+                    const pos = await getPosition();
+                    await fetchWeather(pos.coords.latitude, pos.coords.longitude);
+                } else if (permissionStatus.state === 'prompt') {
+                    // 瀏覽器將會跳出詢問視窗
+                    const pos = await getPosition();
+                    await fetchWeather(pos.coords.latitude, pos.coords.longitude);
+                } else if (permissionStatus.state === 'denied') {
+                    setError("您已封鎖位置權限，將使用預設地點。");
+                    await fetchWeather(24.9576, 121.2245); // 備案：使用桃園市
                 }
-            );
+            } catch (err) {
+                console.error("Geolocation error:", err);
+                let message = "無法獲取您的位置，將使用預設地點。";
+                if (err.code === 1) message = "您已拒絕位置權限，將使用預設地點。";
+                if (err.code === 2) message = "無法確定您的位置，請檢查網路或GPS。";
+                if (err.code === 3) message = "獲取位置超時，將使用預設地點。";
+                setError(message);
+                await fetchWeather(24.9576, 121.2245); // 任何錯誤都使用備案
+            }
         };
 
-        getPosition();
+        handleLocation();
     }, []);
 
     useEffect(() => {
@@ -517,7 +542,6 @@ function App() {
                             <section>
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2>
-                                    {/* 【修正】在天氣載入完成前，禁用推薦按鈕 */}
                                     <button onClick={generateSuggestions} disabled={loading.suggestions || loading.weather} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50">
                                         <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
                                     </button>
