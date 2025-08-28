@@ -1,9 +1,9 @@
 // /api/gemini.js
 
-// 引入 Google Generative AI SDK (僅用於圖片處理)
+// 引入 Google Generative AI SDK
 import { GoogleGenerativeAI } from "@google/generative-ai";
-// Node.js v18+ 內建了 fetch，我們將用它來直接呼叫 REST API
-import fetch from 'node-fetch';
+// 【修正】使用 require 語法來引入 node-fetch v2
+const fetch = require('node-fetch');
 
 // --- Helper Functions (輔助函式) ---
 
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
   try {
     const { prompt: task, outfit, weather, imageUrl } = req.body;
 
-    // 任務：描述圖片 (維持使用 SDK，因為此部分未出錯)
+    // 任務：描述圖片 (維持使用 SDK)
     if (task === 'describe_image') {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -80,7 +80,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ response: { description: description } });
     }
 
-    // --- 【最終修正】任務：文字生成 (改用直接的 REST API 呼叫) ---
+    // --- 任務：文字生成 (使用 REST API 呼叫) ---
     const fullPrompt = createPrompt(weather, outfit, task);
     let schema;
 
@@ -118,7 +118,6 @@ export default async function handler(req, res) {
 
     const result = await apiResponse.json();
     
-    // 從 REST API 回應中提取純文字內容，這個內容本身就是一個 JSON 字串
     if (!result.candidates || !result.candidates[0].content.parts[0].text) {
         throw new Error("API 回應格式不正確，找不到生成的內容。");
     }
@@ -129,7 +128,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('API 執行錯誤:', error);
-    // 確保即使在 catch 區塊中，也回傳 JSON 格式的錯誤
     res.status(500).json({ error: `伺服器內部錯誤: ${error.message}` });
   }
 }
