@@ -7,10 +7,8 @@ const fetch = require('node-fetch');
 
 // --- Helper Functions (輔助函式) ---
 
-// 讓清單包含每件衣物的 ID
 const formatClothingList = (items, categoryName) => {
   if (!items || items.length === 0) return `沒有任何${categoryName}可選。\n`;
-  // 在描述前加上 "[id: item.id]" 格式
   return `${categoryName}:\n${items.map(item => `- [id: ${item.id}] ${item.description || '一件' + categoryName}`).join('\n')}\n`;
 };
 
@@ -22,16 +20,10 @@ const createPrompt = (weather, outfit, task) => {
 
   if (task === 'generate_suggestions') {
     const clothingInventory = formatClothingList(outfit.tops, "上身") + formatClothingList(outfit.bottoms, "下身") + formatClothingList(outfit.dresses, "洋裝") + formatClothingList(outfit.outwears, "外套");
-    // 要求 AI 在回覆中必須包含 ID
-    return `${persona}\n\n${weatherDescription}\n\n這是我目前擁有的衣物清單：\n${clothingInventory}\n請根據以上條件，為我搭配出三套最適合的穿搭。搭配組合可以是「上身+下身」或「洋裝」。任何組合都可以選擇是否搭配外套。請為每套穿搭提供一個 1-100 分的分數和一句精簡的搭配理由。\n請務必只從我提供的衣物清單中做選擇，並在 JSON 回應中包含所選衣物的 ID (例如 "top_id", "bottom_id")。`;
+    // 【最終修正】要求 AI 回傳極其簡單的純文字格式
+    return `${persona}\n\n${weatherDescription}\n\n這是我目前擁有的衣物清單：\n${clothingInventory}\n請根據以上條件，為我搭配出三套最適合的穿搭。請在每一行只回覆一套穿搭，並嚴格遵循以下兩種格式之一：\n1. 洋裝搭配: DRESS:[洋裝ID],OUTERWEAR:[外套ID(可選)],SCORE:[分數],REASON:[一句精簡的理由]\n2. 上下身搭配: TOP:[上身ID],BOTTOM:[下身ID],OUTERWEAR:[外套ID(可選)],SCORE:[分數],REASON:[一句精簡的理由]\n請不要包含任何 JSON 格式、引號、或多餘的文字。`;
   }
 
-  if (task === 'score_outfit') {
-    // 【修正】修正了 outfit.top.description 的拼寫錯誤
-    const userOutfitDescription = [outfit.dress && `洋裝: ${outfit.dress.description}`, outfit.top && `上身: ${outfit.top.description}`, outfit.bottom && `下身: ${outfit.bottom.description}`, outfit.outerwear && `外套: ${outfit.outerwear.description}`].filter(Boolean).join('，');
-    return `${persona}\n\n${weatherDescription}\n\n我搭配了這一套衣服：${userOutfitDescription}。\n請根據天氣、風格、顏色協調性等方面，為這套穿搭打一個 1-100 分的分數，並提供一句精簡的評語說明理由。`;
-  }
-  
   if (task === 'describe_image') {
     return "你是一位時尚單品描述專家。請用一句話，精準且生動地描述這件衣物。請包含顏色、款式、材質或圖案等關鍵特徵。例如：「一件黑色的高腰緊身牛仔褲」或「一件米白色的麻花針織毛衣」。描述請使用繁體中文。";
   }
@@ -54,100 +46,64 @@ export default async function handler(req, res) {
   }
 
   try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const { prompt: task, outfit, weather, imageUrl } = req.body;
 
     // 任務：描述圖片 (維持使用 SDK)
     if (task === 'describe_image') {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        if (!imageUrl) {
-            return res.status(400).json({ error: '缺少圖片網址' });
-        }
-        
+        if (!imageUrl) return res.status(400).json({ error: '缺少圖片網址' });
         const imageResponse = await fetch(imageUrl);
-        if (!imageResponse.ok) {
-            throw new Error(`無法從網址下載圖片: ${imageResponse.statusText}`);
-        }
+        if (!imageResponse.ok) throw new Error(`無法從網址下載圖片: ${imageResponse.statusText}`);
         const imageBuffer = await imageResponse.arrayBuffer();
         const base64Data = Buffer.from(imageBuffer).toString('base64');
-
         const prompt = createPrompt(null, null, 'describe_image');
-        const imagePart = {
-            inlineData: {
-                mimeType: 'image/jpeg',
-                data: base64Data,
-            },
-        };
-        
+        const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Data } };
         const result = await model.generateContent([prompt, imagePart]);
         const description = result.response.text().trim();
         return res.status(200).json({ response: { description: description } });
     }
 
-    // --- 任務：文字生成 (使用 REST API 呼叫) ---
-    const fullPrompt = createPrompt(weather, outfit, task);
-    let schema;
-
+    // --- 【最終修正】任務：文字生成 (獲取純文字後由後端自行解析) ---
     if (task === 'generate_suggestions') {
-      // 使用更嚴格的 schema，強制 AI 必須回傳完整的搭配
-      schema = {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: {
-            top_id: { type: "STRING" },
-            bottom_id: { type: "STRING" },
-            dress_id: { type: "STRING" },
-            outerwear_id: { type: "STRING" },
-            score: { type: "NUMBER" },
-            reasoning: { type: "STRING" }
-          },
-          required: ["score", "reasoning"],
-          oneOf: [
-            { "required": ["dress_id"] },
-            { "required": ["top_id", "bottom_id"] }
-          ]
+        const fullPrompt = createPrompt(weather, outfit, task);
+        const result = await model.generateContent(fullPrompt);
+        const responseText = result.response.text();
+
+        // 由後端程式碼負責解析 AI 回傳的簡單文字
+        const suggestions = [];
+        const lines = responseText.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+            const suggestion = {};
+            // 使用正規表達式來穩定地抓取鍵值對
+            const parts = line.match(/([A-Z_]+):\[([^\]]+)\]/g) || [];
+            
+            for (const part of parts) {
+                const match = part.match(/([A-Z_]+):\[([^\]]+)\]/);
+                if (match) {
+                    const key = match[1].toLowerCase();
+                    const value = match[2];
+                    if (key === 'top') suggestion.top_id = value;
+                    else if (key === 'bottom') suggestion.bottom_id = value;
+                    else if (key === 'dress') suggestion.dress_id = value;
+                    else if (key === 'outerwear') suggestion.outerwear_id = value;
+                    else if (key === 'score') suggestion.score = parseInt(value, 10);
+                    else if (key === 'reason') suggestion.reasoning = value;
+                }
+            }
+            
+            // 驗證解析出的物件是否完整
+            if (suggestion.score && suggestion.reasoning && (suggestion.dress_id || (suggestion.top_id && suggestion.bottom_id))) {
+                suggestions.push(suggestion);
+            }
         }
-      };
-    } else if (task === 'score_outfit') {
-      schema = { type: "OBJECT", properties: { score: { type: "NUMBER" }, reasoning: { type: "STRING" } }, required: ["score", "reasoning"] };
-    } else {
-      return res.status(400).json({ error: '無效的任務類型' });
+        
+        return res.status(200).json({ response: suggestions });
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    
-    const payload = {
-      contents: [{
-        parts: [{ text: fullPrompt }]
-      }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: schema
-      }
-    };
-
-    const apiResponse = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!apiResponse.ok) {
-      const errorBody = await apiResponse.json();
-      console.error("Gemini API Error:", errorBody);
-      throw new Error(`API 請求失敗，狀態碼: ${apiResponse.status}. ${errorBody.error?.message || '未知錯誤'}`);
-    }
-
-    const result = await apiResponse.json();
-    
-    if (!result.candidates || !result.candidates[0].content.parts[0].text) {
-        throw new Error("API 回應格式不正確，找不到生成的內容。");
-    }
-    const responseText = result.candidates[0].content.parts[0].text;
-    const responseObject = JSON.parse(responseText);
-    
-    res.status(200).json({ response: responseObject });
+    // 對於其他任務，如果未來有需要，可以加在這裡
+    return res.status(400).json({ error: '無效的任務類型' });
 
   } catch (error) {
     console.error('API 執行錯誤:', error);
