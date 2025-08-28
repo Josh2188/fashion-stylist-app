@@ -1,17 +1,11 @@
+// Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged,
-  // --- NEW: Import Google Sign-in tools ---
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut
-} from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Vercel 會在建置時，將您的環境變數注入到這裡
+// Your web app's Firebase configuration
+// This now reads from the environment variables provided by Vercel during the build process.
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
@@ -22,21 +16,22 @@ const firebaseConfig = {
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize and export Firebase services
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-
-// --- NEW: Create a Google Auth Provider ---
 const googleProvider = new GoogleAuthProvider();
 
-export { 
-  auth, 
-  db, 
-  storage, 
-  onAuthStateChanged,
-  // --- NEW: Export the new tools ---
+// Export all the necessary functions and variables for App.js
+export {
+  auth,
+  db,
+  storage,
   googleProvider,
   signInWithPopup,
-  signOut
+  signOut,
+  onAuthStateChanged
 };
