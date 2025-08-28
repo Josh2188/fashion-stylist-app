@@ -1,102 +1,149 @@
-// api/gemini.js
-// 全面升級，以處理評分和更複雜的搭配邏輯
+// /api/gemini.js
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+// 引入 Google Generative AI SDK
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// --- Helper Functions (輔助函式) ---
+
+/**
+ * 格式化衣物清單，方便 AI 閱讀
+ * @param {Array} items - 衣物物件陣列
+ * @param {string} categoryName - 分類名稱 (例如: "上身")
+ * @returns {string} - 格式化後的字串
+ */
+const formatClothingList = (items, categoryName) => {
+  if (!items || items.length === 0) {
+    return `沒有任何${categoryName}可選。\n`;
+  }
+  // 將每個衣物的描述轉換成一個列表項目
+  return `${categoryName}:\n${items.map(item => `- ${item.description || '一件' + categoryName}`).join('\n')}\n`;
+};
+
+/**
+ * 建立給 AI 的主要提示文字 (Prompt)
+ * @param {object} weather - 天氣資訊物件
+ * @param {object} outfit - 衣物清單物件
+ * @param {string} task - 任務類型 ('generate_suggestions' 或 'score_outfit')
+ * @returns {string} - 組合好的提示文字
+ */
+const createPrompt = (weather, outfit, task) => {
+  // AI 的角色設定
+  const persona = "你是一位專業、有創意且友善的時尚穿搭顧問。你的目標是根據使用者擁有的衣物和當地天氣，提供實用又有型的穿搭建議。";
+  
+  // 天氣資訊的文字描述
+  const weatherDescription = weather 
+    ? `目前的穿搭地點是${weather.city}，天氣為「${weather.description}」，氣溫 ${weather.currentTemp}°C (最低 ${weather.tempMin}°C，最高 ${weather.tempMax}°C)。請務必將天氣狀況作為最重要的考量因素。`
+    : "無法獲取天氣資訊，請提供通用建議。";
+
+  // 根據不同任務產生不同的提示內容
+  if (task === 'generate_suggestions') {
+    // 組合衣物清單
+    const clothingInventory = 
+      formatClothingList(outfit.tops, "上身") +
+      formatClothingList(outfit.bottoms, "下身") +
+      formatClothingList(outfit.dresses, "洋裝") +
+      formatClothingList(outfit.outwears, "外套");
+
+    return `${persona}\n\n${weatherDescription}\n\n這是我目前擁有的衣物清單：\n${clothingInventory}\n請根據以上條件，為我搭配出三套最適合的穿搭。搭配組合可以是「上身+下身」或「洋裝」。任何組合都可以選擇是否搭配外套。請為每套穿搭提供一個 1-100 分的分數和一句精簡的搭配理由。\n請務必只從我提供的衣物清單中做選擇，不要創造不存在的衣物。`;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Gemini API Key is not configured.' });
+  if (task === 'score_outfit') {
+    // 組合使用者搭配的衣物描述
+    const userOutfitDescription = [
+      outfit.dress ? `洋裝: ${outfit.dress.description}` : null,
+      outfit.top ? `上身: ${outfit.top.description}` : null,
+      outfit.bottom ? `下身: ${outfit.bottom.description}` : null,
+      outfit.outerwear ? `外套: ${outfit.outerwear.description}` : null,
+    ].filter(Boolean).join('，'); // 移除空值並用逗號連接
+
+    return `${persona}\n\n${weatherDescription}\n\n我搭配了這一套衣服：${userOutfitDescription}。\n請根據天氣、風格、顏色協調性等方面，為這套穿搭打一個 1-100 分的分數，並提供一句精簡的評語說明理由。`;
+  }
+
+  return "無效的任務"; // 備用
+};
+
+
+// --- Main API Handler (主要的 API 處理函式) ---
+
+export default async function handler(req, res) {
+  // 只接受 POST 請求
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: '僅允許 POST 請求' });
   }
 
   try {
-    const { prompt, outfit, weather } = req.body;
-    let finalPrompt = '';
-
-    const weatherInfo = weather 
-      ? `目前地點在台灣 ${weather.city}，氣溫約 ${weather.currentTemp}°C (高溫 ${weather.tempMax}°C，低溫 ${weather.tempMin}°C)。`
-      : '無法獲取天氣資訊。';
-
-    if (prompt === 'generate_suggestions') {
-      // 處理 AI 自動推薦
-      const { tops, bottoms, dresses, outwears, member } = outfit;
-      finalPrompt = `您是一位頂尖的 AI 造型師。${weatherInfo}
-請為「${member.name}」從以下衣物清單中，搭配出【三套】風格不同且適合今天天氣的穿搭。
-
-可選衣物 (描述是 AI 產生的參考):
-- 上身: ${tops.map(c => c.description).join(', ') || '無'}
-- 下身: ${bottoms.map(c => c.description).join(', ') || '無'}
-- 洋裝: ${dresses.map(c => c.description).join(', ') || '無'}
-- 外套: ${outwears.map(c => c.description).join(', ') || '無'}
-
-搭配規則:
-1. 組合可以是「上身+下身」、「洋裝+下身」或「單穿洋裝」。
-2. 「上身」或「洋裝」都可以選擇性地外加一件「外套」。
-3. 必須從提供的清單中選擇衣物。
-
-您的回答必須是、也只能是一個 JSON 陣列，陣列中包含三個物件，每個物件代表一套穿搭，且必須包含以下鍵:
-- "top": (string) 所選上身的描述，如果沒選則為 null。
-- "bottom": (string) 所選下身的描述，如果沒選則為 null。
-- "dress": (string) 所選洋裝的描述，如果沒選則為 null。
-- "outerwear": (string) 所選外套的描述，如果沒選則為 null。
-- "score": (number) 您對此搭配的評分 (0-100)。
-- "reasoning": (string) 簡短的評分理由和穿搭建議。
-
-JSON 範例:
-[
-  { "top": "白色T恤", "bottom": "藍色牛仔褲", "dress": null, "outerwear": "黑色皮夾克", "score": 95, "reasoning": "經典的街頭風格，皮夾克提供了層次感，非常適合今天的涼爽天氣。" },
-  { "top": null, "bottom": null, "dress": "碎花長洋裝", "outerwear": null, "score": 88, "reasoning": "這件洋裝充滿夏日氣息，單穿就很優雅，適合白天的戶外活動。" }
-]`;
-
-    } else if (prompt === 'score_outfit') {
-      // 處理手動搭配的評分
-      const { top, bottom, dress, outerwear } = outfit;
-      const outfitDesc = [
-          top ? `上身: ${top.description}` : null,
-          bottom ? `下身: ${bottom.description}` : null,
-          dress ? `洋裝: ${dress.description}` : null,
-          outerwear ? `外套: ${outerwear.description}` : null,
-      ].filter(Boolean).join('，');
-
-      finalPrompt = `您是一位頂尖的 AI 造型師。${weatherInfo}
-使用者自行搭配了一套穿搭：「${outfitDesc}」。
-
-您的任務是為這套穿搭評分，並嚴格遵循以下 JSON 格式回傳，不要有任何額外的文字或符號:
-{
-  "score": (number) 您對此搭配的評分 (0-100)。
-  "reasoning": (string) 簡短的評分理由，說明優點、潛在問題，並根據天氣提供建議。
-}`;
-    } else {
-      return res.status(400).json({ error: 'Invalid prompt type.' });
+    // 檢查 API Key 是否存在
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("找不到 GEMINI_API_KEY");
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-    const payload = { contents: [{ parts: [{ text: finalPrompt }] }] };
-
-    const geminiResponse = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    // 初始化 AI 模型
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
     });
 
-    if (!geminiResponse.ok) {
-      const errorBody = await geminiResponse.text();
-      console.error('Gemini API Error:', errorBody);
-      throw new Error(`Gemini API call failed with status: ${geminiResponse.status}`);
-    }
+    // 從請求中獲取資料
+    const { prompt: task, outfit, weather } = req.body;
 
-    const result = await geminiResponse.json();
-    if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-      const text = result.candidates[0].content.parts[0].text;
-      res.status(200).json({ response: text });
+    // 建立完整的提示文字
+    const fullPrompt = createPrompt(weather, outfit, task);
+
+    let generationConfig;
+    let schema;
+
+    // 根據任務類型設定 AI 回應的格式
+    if (task === 'generate_suggestions') {
+      // 要求 AI 回傳三套建議的 JSON 格式
+      schema = {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            top_desc: { type: "STRING", description: "上身衣物的描述" },
+            bottom_desc: { type: "STRING", description: "下身衣物的描述" },
+            dress_desc: { type: "STRING", description: "洋裝的描述" },
+            outerwear_desc: { type: "STRING", description: "外套的描述" },
+            score: { type: "NUMBER", description: "分數 (1-100)" },
+            reasoning: { type: "STRING", description: "搭配理由" },
+          },
+          required: ["score", "reasoning"]
+        }
+      };
+    } else if (task === 'score_outfit') {
+      // 要求 AI 回傳評分的 JSON 格式
+      schema = {
+        type: "OBJECT",
+        properties: {
+          score: { type: "NUMBER", description: "分數 (1-100)" },
+          reasoning: { type: "STRING", description: "評分理由" },
+        },
+        required: ["score", "reasoning"]
+      };
     } else {
-      throw new Error("Invalid response structure from Gemini API.");
+      return res.status(400).json({ error: '無效的任務類型' });
     }
+    
+    // 設定 AI 的生成配置
+    generationConfig = {
+      responseMimeType: "application/json",
+      responseSchema: schema,
+    };
+
+    // 呼叫 AI 模型
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+      generationConfig,
+    });
+    
+    const responseText = result.response.text();
+    const responseObject = JSON.parse(responseText);
+
+    // 回傳成功的結果
+    res.status(200).json({ response: responseObject });
 
   } catch (error) {
-    console.error('Error in Gemini API function:', error);
-    res.status(500).json({ error: error.message });
+    console.error('API 錯誤:', error);
+    res.status(500).json({ error: `伺服器內部錯誤: ${error.message}` });
   }
 }
