@@ -140,7 +140,7 @@ function App() {
     const [itemToReview, setItemToReview] = useState(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
-    const [imageToView, setImageToView] = useState(null); // **新增：查看大圖的狀態**
+    const [imageToView, setImageToView] = useState(null);
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
