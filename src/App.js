@@ -116,11 +116,12 @@ function App() {
     // --- State Declarations (狀態宣告) ---
     const [user, setUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
+    const [appStatus, setAppStatus] = useState('initializing'); // initializing -> locating -> fetching_weather -> ready
     const [members, setMembers] = useState([]);
     const [activeMember, setActiveMember] = useState(null);
     const [clothingItems, setClothingItems] = useState([]);
     const [view, setView] = useState('suggestions');
-    const [loading, setLoading] = useState({ suggestions: false, upload: false, weather: true, scoring: false, optimization: false });
+    const [loading, setLoading] = useState({ suggestions: false, upload: false, scoring: false, optimization: false });
     const [error, setError] = useState('');
     const fileInputRef = useRef(null);
     const [isMemberModalOpen, setMemberModalOpen] = useState(false);
@@ -144,11 +145,9 @@ function App() {
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
-    // 【最終修正】重構天氣與位置獲取邏輯
     useEffect(() => {
         const fetchWeather = async (lat, lon) => {
-            setLoading(p => ({ ...p, weather: true }));
-            // 清除任何先前與天氣或位置相關的錯誤訊息
+            setAppStatus('fetching_weather');
             setError(prev => (prev.includes("天氣") || prev.includes("位置")) ? "" : prev);
             try {
                 const response = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
@@ -156,54 +155,36 @@ function App() {
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
                 setWeather(data);
+                setAppStatus('ready');
             } catch (err) {
                 console.error("Weather fetch error:", err);
                 setError("無法獲取天氣資訊。");
-            } finally {
-                setLoading(p => ({ ...p, weather: false }));
+                setAppStatus('ready'); 
             }
         };
 
         const handleLocation = async () => {
-            // 首先檢查瀏覽器是否支援 Geolocation API
+            setAppStatus('locating');
             if (!navigator.geolocation) {
-                setError("您的瀏覽器不支援位置定位，將使用預設地點。");
-                await fetchWeather(24.9576, 121.2245); // 備案：使用桃園市
+                setError("您的瀏覽器不支援定位，將使用預設地點。");
+                await fetchWeather(24.9576, 121.2245);
                 return;
             }
 
-            try {
-                // 使用 Permissions API 檢查權限狀態，更可靠
-                const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
-
-                const getPosition = () => new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {
-                        enableHighAccuracy: true,
-                        timeout: 10000, // 增加 10 秒的超時設定
-                        maximumAge: 0
-                    });
-                });
-
-                if (permissionStatus.state === 'granted') {
-                    const pos = await getPosition();
-                    await fetchWeather(pos.coords.latitude, pos.coords.longitude);
-                } else if (permissionStatus.state === 'prompt') {
-                    // 瀏覽器將會跳出詢問視窗
-                    const pos = await getPosition();
-                    await fetchWeather(pos.coords.latitude, pos.coords.longitude);
-                } else if (permissionStatus.state === 'denied') {
-                    setError("您已封鎖位置權限，將使用預設地點。");
-                    await fetchWeather(24.9576, 121.2245); // 備案：使用桃園市
-                }
-            } catch (err) {
-                console.error("Geolocation error:", err);
-                let message = "無法獲取您的位置，將使用預設地點。";
-                if (err.code === 1) message = "您已拒絕位置權限，將使用預設地點。";
-                if (err.code === 2) message = "無法確定您的位置，請檢查網路或GPS。";
-                if (err.code === 3) message = "獲取位置超時，將使用預設地點。";
-                setError(message);
-                await fetchWeather(24.9576, 121.2245); // 任何錯誤都使用備案
-            }
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    fetchWeather(pos.coords.latitude, pos.coords.longitude);
+                },
+                async (err) => {
+                    console.warn("Geolocation failed:", err.message);
+                    let message = "無法獲取您的位置，將使用預設地點。";
+                    if (err.code === 1) message = "您已拒絕位置授權，將使用預設地點。";
+                    if (err.code === 3) message = "獲取位置超時，將使用預設地點。";
+                    setError(message);
+                    await fetchWeather(24.9576, 121.2245);
+                },
+                { timeout: 10000, maximumAge: 60000 }
+            );
         };
 
         handleLocation();
@@ -240,7 +221,7 @@ function App() {
     }, [uploadQueue, currentItemToClassify]);
 
     useEffect(() => {
-        if (!activeMember || clothingItems.length === 0 || loading.optimization) return;
+        if (appStatus !== 'ready' || !activeMember || clothingItems.length === 0 || loading.optimization) return;
         
         const runBackgroundTasks = async () => {
             const itemsToAnalyze = clothingItems.filter(item => item.memberId === activeMember.id && !item.isAnalyzed);
@@ -271,7 +252,7 @@ function App() {
         };
         
         runBackgroundTasks();
-    }, [activeMember, clothingItems]);
+    }, [appStatus, activeMember, clothingItems]);
 
 
     // --- API & Data Functions (API 與資料處理函式) ---
@@ -433,7 +414,23 @@ function App() {
                     score: sugg.score,
                     reasoning: sugg.reasoning
                 }));
-                setSuggestions(matchedSuggestions);
+
+                // 【最終修正】加入智慧過濾器，只顯示完整的搭配
+                const completeSuggestions = matchedSuggestions.filter(sugg => {
+                    const isDressOutfit = sugg.dress;
+                    const isTopAndBottomOutfit = sugg.top && sugg.bottom;
+                    return isDressOutfit || isTopAndBottomOutfit;
+                });
+
+                if (completeSuggestions.length === 0 && result.response.length > 0) {
+                    setError("AI 回應的搭配不完整，請再試一次。");
+                } else if (completeSuggestions.length < result.response.length) {
+                    // 如果 AI 有部分回覆不完整，可以選擇性地給一個提示
+                    console.warn("部分 AI 建議因不完整而被過濾。");
+                }
+                
+                setSuggestions(completeSuggestions);
+
             } else { 
                 setError("AI 回應格式不正確，無法產生建議。"); 
             }
@@ -482,6 +479,20 @@ function App() {
         ));
     };
 
+    const renderWeatherStatus = () => {
+        if (appStatus !== 'ready') return <span>正在載入天氣資訊...</span>;
+        if (weather) {
+            return (
+                <><SunIcon className="text-yellow-500 flex-shrink-0" />
+                <div className="flex flex-col items-start">
+                    <span className="font-semibold leading-tight">{weather.city}</span>
+                    <span className="leading-tight">{weather.currentTemp}°C <span className="text-xs text-gray-500">({weather.tempMin}°/{weather.tempMax}°)</span></span>
+                </div></>
+            );
+        }
+        return <span>天氣資訊無法取得</span>;
+    };
+
     return (
         <div className="max-w-md mx-auto bg-white shadow-lg min-h-screen relative">
             {isCameraOpen && <CameraCaptureModal onClose={() => setCameraOpen(false)} onCapture={handleCapture} />}
@@ -518,7 +529,7 @@ function App() {
 
             <header className="bg-white p-4 border-b sticky top-0 z-10 grid grid-cols-3 items-center">
                 <div className="flex items-center col-span-1"><UserIcon className="text-pink-500" /><select value={activeMember?.id || ''} onChange={(e) => setActiveMember(members.find(m => m.id === e.target.value))} className="ml-2 font-semibold text-lg border-none bg-transparent focus:ring-0" disabled={members.length === 0}>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button onClick={() => handleOpenMemberModal(activeMember)} className="p-1 text-gray-400 hover:text-gray-600" disabled={!activeMember}><EditIcon size={16}/></button></div>
-                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 col-span-1">{loading.weather ? <span>天氣載入中...</span> : weather ? ( <><SunIcon className="text-yellow-500 flex-shrink-0" /><div className="flex flex-col items-start"><span className="font-semibold leading-tight">{weather.city}</span><span className="leading-tight">{weather.currentTemp}°C <span className="text-xs text-gray-500">({weather.tempMin}°/{weather.tempMax}°)</span></span></div></> ) : <span>天氣資訊無法取得</span>}</div>
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 col-span-1">{renderWeatherStatus()}</div>
                 <div className="flex justify-end col-span-1 items-center"><button onClick={() => handleOpenMemberModal(null)} className="p-2 rounded-full hover:bg-gray-100"><PlusIcon /></button><button onClick={handleSignOut} className="p-2 rounded-full hover:bg-gray-100 text-gray-500" title="登出"><LogOutIcon /></button></div>
             </header>
 
@@ -542,7 +553,7 @@ function App() {
                             <section>
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2>
-                                    <button onClick={generateSuggestions} disabled={loading.suggestions || loading.weather} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50">
+                                    <button onClick={generateSuggestions} disabled={appStatus !== 'ready' || loading.suggestions} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50">
                                         <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
                                     </button>
                                 </div>

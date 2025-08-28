@@ -89,7 +89,7 @@ export default async function handler(req, res) {
     let schema;
 
     if (task === 'generate_suggestions') {
-      // 【修正】使用更嚴格的 schema，強制 AI 必須回傳完整的搭配
+      // 使用更嚴格的 schema，強制 AI 必須回傳完整的搭配
       schema = {
         type: "ARRAY",
         items: {
