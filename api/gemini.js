@@ -1,15 +1,17 @@
 // /api/gemini.js
 
-// 引入 Google Generative AI SDK
+// 引入 Google Generative AI SDK (僅用於圖片處理)
 import { GoogleGenerativeAI } from "@google/generative-ai";
-// 【修正】使用 require 語法來引入 node-fetch v2
+// 使用 require 語法來引入 node-fetch v2
 const fetch = require('node-fetch');
 
 // --- Helper Functions (輔助函式) ---
 
+// 【修正】讓清單包含每件衣物的 ID
 const formatClothingList = (items, categoryName) => {
   if (!items || items.length === 0) return `沒有任何${categoryName}可選。\n`;
-  return `${categoryName}:\n${items.map(item => `- ${item.description || '一件' + categoryName}`).join('\n')}\n`;
+  // 在描述前加上 "[id: item.id]" 格式
+  return `${categoryName}:\n${items.map(item => `- [id: ${item.id}] ${item.description || '一件' + categoryName}`).join('\n')}\n`;
 };
 
 const createPrompt = (weather, outfit, task) => {
@@ -20,11 +22,12 @@ const createPrompt = (weather, outfit, task) => {
 
   if (task === 'generate_suggestions') {
     const clothingInventory = formatClothingList(outfit.tops, "上身") + formatClothingList(outfit.bottoms, "下身") + formatClothingList(outfit.dresses, "洋裝") + formatClothingList(outfit.outwears, "外套");
-    return `${persona}\n\n${weatherDescription}\n\n這是我目前擁有的衣物清單：\n${clothingInventory}\n請根據以上條件，為我搭配出三套最適合的穿搭。搭配組合可以是「上身+下身」或「洋裝」。任何組合都可以選擇是否搭配外套。請為每套穿搭提供一個 1-100 分的分數和一句精簡的搭配理由。\n請務必只從我提供的衣物清單中做選擇，不要創造不存在的衣物。`;
+    // 【修正】要求 AI 在回覆中必須包含 ID
+    return `${persona}\n\n${weatherDescription}\n\n這是我目前擁有的衣物清單：\n${clothingInventory}\n請根據以上條件，為我搭配出三套最適合的穿搭。搭配組合可以是「上身+下身」或「洋裝」。任何組合都可以選擇是否搭配外套。請為每套穿搭提供一個 1-100 分的分數和一句精簡的搭配理由。\n請務必只從我提供的衣物清單中做選擇，並在 JSON 回應中包含所選衣物的 ID (例如 "top_id", "bottom_id")。`;
   }
 
   if (task === 'score_outfit') {
-    const userOutfitDescription = [outfit.dress && `洋裝: ${outfit.dress.description}`, outfit.top && `上身: ${outfit.top.description}`, outfit.bottom && `下身: ${outfit.bottom.description}`, outfit.outerwear && `外套: ${outfit.outerwear.description}`].filter(Boolean).join('，');
+    const userOutfitDescription = [outfit.dress && `洋裝: ${outfit.dress.description}`, outfit.top && `上身: ${out.top.description}`, outfit.bottom && `下身: ${outfit.bottom.description}`, outfit.outerwear && `外套: ${outfit.outerwear.description}`].filter(Boolean).join('，');
     return `${persona}\n\n${weatherDescription}\n\n我搭配了這一套衣服：${userOutfitDescription}。\n請根據天氣、風格、顏色協調性等方面，為這套穿搭打一個 1-100 分的分數，並提供一句精簡的評語說明理由。`;
   }
   
@@ -85,7 +88,15 @@ export default async function handler(req, res) {
     let schema;
 
     if (task === 'generate_suggestions') {
-      schema = { type: "ARRAY", items: { type: "OBJECT", properties: { top_desc: { type: "STRING" }, bottom_desc: { type: "STRING" }, dress_desc: { type: "STRING" }, outerwear_desc: { type: "STRING" }, score: { type: "NUMBER" }, reasoning: { type: "STRING" } }, required: ["score", "reasoning"] } };
+      // 【修正】更新 schema，要求 AI 回傳 ID 而不是 description
+      schema = { type: "ARRAY", items: { type: "OBJECT", properties: { 
+          top_id: { type: "STRING" }, 
+          bottom_id: { type: "STRING" }, 
+          dress_id: { type: "STRING" }, 
+          outerwear_id: { type: "STRING" }, 
+          score: { type: "NUMBER" }, 
+          reasoning: { type: "STRING" } 
+      }, required: ["score", "reasoning"] } };
     } else if (task === 'score_outfit') {
       schema = { type: "OBJECT", properties: { score: { type: "NUMBER" }, reasoning: { type: "STRING" } }, required: ["score", "reasoning"] };
     } else {

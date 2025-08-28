@@ -356,15 +356,35 @@ function App() {
         setSuggestions([]);
         
         const memberItems = clothingItems.filter(item => item.memberId === activeMember.id);
-        const outfit = { member: activeMember, tops: memberItems.filter(i => i.category === 'top'), bottoms: memberItems.filter(i => i.category === 'bottom'), dresses: memberItems.filter(i => i.category === 'dress'), outwears: memberItems.filter(i => i.category === 'outerwear') };
+        const outfit = { 
+            member: activeMember, 
+            tops: memberItems.filter(i => i.category === 'top'), 
+            bottoms: memberItems.filter(i => i.category === 'bottom'), 
+            dresses: memberItems.filter(i => i.category === 'dress'), 
+            outwears: memberItems.filter(i => i.category === 'outerwear') 
+        };
 
         try {
             const result = await callAPI('/api/gemini', { prompt: 'generate_suggestions', outfit, weather });
             if (result && Array.isArray(result.response)) {
-                const matchedSuggestions = result.response.map(sugg => ({ top: outfit.tops.find(i => i.description === sugg.top_desc) || null, bottom: outfit.bottoms.find(i => i.description === sugg.bottom_desc) || null, dress: outfit.dresses.find(i => i.description === sugg.dress_desc) || null, outerwear: outfit.outwears.find(i => i.description === sugg.outerwear_desc) || null, score: sugg.score, reasoning: sugg.reasoning }));
+                // 【修正】改用 ID 進行精準比對，而不是用文字描述
+                const matchedSuggestions = result.response.map(sugg => ({
+                    top: outfit.tops.find(i => i.id === sugg.top_id) || null,
+                    bottom: outfit.bottoms.find(i => i.id === sugg.bottom_id) || null,
+                    dress: outfit.dresses.find(i => i.id === sugg.dress_id) || null,
+                    outerwear: outfit.outwears.find(i => i.id === sugg.outerwear_id) || null,
+                    score: sugg.score,
+                    reasoning: sugg.reasoning
+                }));
                 setSuggestions(matchedSuggestions);
-            } else { setError("AI 回應格式不正確，無法產生建議。"); }
-        } catch (e) { setError("產生建議時發生錯誤。"); } finally { setLoading(p => ({ ...p, suggestions: false })); }
+            } else { 
+                setError("AI 回應格式不正確，無法產生建議。"); 
+            }
+        } catch (e) { 
+            setError("產生建議時發生錯誤。"); 
+        } finally { 
+            setLoading(p => ({ ...p, suggestions: false })); 
+        }
     };
 
     const scoreManualOutfit = async () => {
