@@ -142,6 +142,8 @@ function App() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [imageToView, setImageToView] = useState(null);
+    // 【最終修正】新增狀態來追蹤是否已嘗試獲取建議
+    const [hasAttemptedSuggestions, setHasAttemptedSuggestions] = useState(false);
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
@@ -392,6 +394,7 @@ function App() {
     const generateSuggestions = async () => {
         if (!activeMember) { setError("請先選擇一位成員。"); return; }
         setLoading(p => ({ ...p, suggestions: true }));
+        setHasAttemptedSuggestions(true); // 【最終修正】記錄已嘗試獲取
         setSuggestions([]);
         
         const memberItems = clothingItems.filter(item => item.memberId === activeMember.id);
@@ -415,7 +418,6 @@ function App() {
                     reasoning: sugg.reasoning
                 }));
 
-                // 【最終修正】加入智慧過濾器，只顯示完整的搭配
                 const completeSuggestions = matchedSuggestions.filter(sugg => {
                     const isDressOutfit = sugg.dress;
                     const isTopAndBottomOutfit = sugg.top && sugg.bottom;
@@ -425,7 +427,6 @@ function App() {
                 if (completeSuggestions.length === 0 && result.response.length > 0) {
                     setError("AI 回應的搭配不完整，請再試一次。");
                 } else if (completeSuggestions.length < result.response.length) {
-                    // 如果 AI 有部分回覆不完整，可以選擇性地給一個提示
                     console.warn("部分 AI 建議因不完整而被過濾。");
                 }
                 
@@ -493,6 +494,28 @@ function App() {
         return <span>天氣資訊無法取得</span>;
     };
 
+    // 【最終修正】AI 推薦頁籤的顯示邏輯
+    const renderSuggestionsContent = () => {
+        if (loading.suggestions) {
+            return <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div>;
+        }
+        if (suggestions.length > 0) {
+            return <div className="space-y-6">{suggestions.map((s, i) => ( <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="grid grid-cols-2"><img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.top?.imageUrl || s.dress?.imageUrl)}/><img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.bottom?.imageUrl || s.outerwear?.imageUrl)}/></div><div className="p-4 bg-gray-50"><button onClick={() => setScoreReasoning(s)} className="w-full text-left"><p className="text-gray-700 italic">"{s.reasoning}"</p><p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p></button></div></div> ))}</div>;
+        }
+        if (hasAttemptedSuggestions) {
+            return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">找不到合適搭配</h3><p className="text-gray-500 mt-2">AI 找不到完整的穿搭建議，您可以調整衣物或稍後再試一次！</p></div>;
+        }
+        // 檢查是否有足夠的衣物來產生建議
+        const hasTops = memberItems.some(item => item.category === 'top');
+        const hasBottoms = memberItems.some(item => item.category === 'bottom');
+        const hasDresses = memberItems.some(item => item.category === 'dress');
+        if (!((hasTops && hasBottoms) || hasDresses)) {
+             return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣物不足</h3><p className="text-gray-500 mt-2">請為「{activeMember?.name}」新增至少一件洋裝，或一件上身及一件下身，才能啟用 AI 推薦喔！</p></div>;
+        }
+        return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">準備好了嗎？</h3><p className="text-gray-500 mt-2">點擊右上角的更新按鈕，讓 AI 為您搭配今天的穿搭吧！</p></div>;
+    };
+
+
     return (
         <div className="max-w-md mx-auto bg-white shadow-lg min-h-screen relative">
             {isCameraOpen && <CameraCaptureModal onClose={() => setCameraOpen(false)} onCapture={handleCapture} />}
@@ -557,7 +580,7 @@ function App() {
                                         <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
                                     </button>
                                 </div>
-                                {loading.suggestions ? <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div> : ( suggestions.length > 0 ? ( <div className="space-y-6">{suggestions.map((s, i) => ( <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="grid grid-cols-2"><img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.top?.imageUrl || s.dress?.imageUrl)}/><img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.bottom?.imageUrl || s.outerwear?.imageUrl)}/></div><div className="p-4 bg-gray-50"><button onClick={() => setScoreReasoning(s)} className="w-full text-left"><p className="text-gray-700 italic">"{s.reasoning}"</p><p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p></button></div></div> ))}</div> ) : <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先為「{activeMember.name}」新增一些衣物吧！</p></div> )}
+                                {renderSuggestionsContent()}
                             </section>
                         )}
                         {view === 'manual' && (
