@@ -74,7 +74,7 @@ export default async function handler(req, res) {
   try {
     // 檢查 API Key 是否存在
     if (!process.env.GEMINI_API_KEY) {
-      throw new Error("找不到 GEMINI_API_KEY");
+      throw new Error("找不到 GEMINI_API_KEY，請在伺服器環境變數中設定。");
     }
 
     // 初始化 AI 模型
@@ -137,12 +137,25 @@ export default async function handler(req, res) {
     });
     
     const responseText = result.response.text();
-    const responseObject = JSON.parse(responseText);
+    let responseObject;
+
+    // **新增：更安全的 JSON 解析**
+    // 嘗試解析 AI 回傳的文字，如果失敗則拋出錯誤
+    try {
+        responseObject = JSON.parse(responseText);
+    } catch (e) {
+        // 在後台記錄下 AI 回傳的原始文字，方便除錯
+        console.error("Gemini 回應的原始文字 (非JSON):", responseText);
+        // 拋出一個新的、更明確的錯誤
+        throw new Error("AI 回應的格式並非有效的 JSON。");
+    }
+
 
     // 回傳成功的結果
     res.status(200).json({ response: responseObject });
 
   } catch (error) {
+    // 統一的錯誤處理
     console.error('API 錯誤:', error);
     res.status(500).json({ error: `伺服器內部錯誤: ${error.message}` });
   }
