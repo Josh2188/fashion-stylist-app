@@ -28,7 +28,6 @@ const createPrompt = (weather, outfit, task) => {
     return `${persona}\n\n${weatherDescription}\n\n我搭配了這一套衣服：${userOutfitDescription}。\n請根據天氣、風格、顏色協調性等方面，為這套穿搭打一個 1-100 分的分數，並提供一句精簡的評語說明理由。`;
   }
   
-  // **新增：產生詳細描述的提示詞**
   if (task === 'describe_image') {
     return "你是一位時尚單品描述專家。請用一句話，精準且生動地描述這件衣物。請包含顏色、款式、材質或圖案等關鍵特徵。例如：「一件黑色的高腰緊身牛仔褲」或「一件米白色的麻花針織毛衣」。描述請使用繁體中文。";
   }
@@ -56,13 +55,11 @@ export default async function handler(req, res) {
 
     const { prompt: task, outfit, weather, imageUrl } = req.body;
 
-    // **新增：處理圖片描述任務**
     if (task === 'describe_image') {
         if (!imageUrl) {
             return res.status(400).json({ error: '缺少圖片網址' });
         }
         
-        // 在後端下載圖片
         const imageResponse = await fetch(imageUrl);
         if (!imageResponse.ok) {
             throw new Error(`無法從網址下載圖片: ${imageResponse.statusText}`);
@@ -78,6 +75,7 @@ export default async function handler(req, res) {
             },
         };
         
+        // For image description, the format [prompt, image] is correct.
         const result = await model.generateContent([prompt, imagePart]);
         const description = result.response.text().trim();
         return res.status(200).json({ response: { description: description } });
@@ -95,9 +93,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: '無效的任務類型' });
     }
     
-    const generationConfig = { responseMimeType: "application/json", responseSchema: schema };
-    // 【修正】移除 "role: 'user'"，將其視為單純的內容生成請求，而非對話請求。
-    const result = await model.generateContent({ contents: [{ parts: [{ text: fullPrompt }] }], generationConfig });
+    // 【二次修正】直接傳遞 prompt 字串和 generationConfig 物件，而不是將 prompt 包在複雜的 contents 結構中。
+    // 這是針對純文字生成並要求 JSON 輸出的正確呼叫方式。
+    const modelWithConfig = genAI.getGenerativeModel({
+        model: "gemini-1.5-flash",
+        generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+    });
+
+    const result = await modelWithConfig.generateContent(fullPrompt);
     
     const responseText = result.response.text();
     const responseObject = JSON.parse(responseText);
