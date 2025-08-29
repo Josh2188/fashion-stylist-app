@@ -12,7 +12,6 @@ const formatClothingList = (items, categoryName) => {
   return `${categoryName}:\n${items.map(item => `- [id: ${item.id}] ${item.description || '一件' + categoryName}`).join('\n')}\n`;
 };
 
-// 【最終修正】提示詞現在一次要求三套，並強調多樣性
 const createPrompt = (weather, outfit) => {
   const persona = "你是一位專業、有創意且友善的時尚穿搭顧問。你的目標是根據使用者擁有的衣物和當地天氣，提供實用又有型的穿搭建議。";
   const weatherDescription = weather 
@@ -21,7 +20,6 @@ const createPrompt = (weather, outfit) => {
   
   const clothingInventory = formatClothingList(outfit.tops, "上身") + formatClothingList(outfit.bottoms, "下身") + formatClothingList(outfit.dresses, "洋裝") + formatClothingList(outfit.outwears, "外套");
   
-  // 【關鍵修正】明確要求 AI 提供三套風格不同的穿搭
   return `${persona}\n\n${weatherDescription}\n\n這是我目前擁有的衣物清單：\n${clothingInventory}\n請根據以上條件，為我搭配出「三套」最適合的穿搭。請務必確保這三套穿搭彼此之間有顯著的風格差異。請為每一套穿搭提供一個分數和一句精簡的理由。`;
 };
 
@@ -40,10 +38,11 @@ export default async function handler(req, res) {
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // 【最終修正】更換為更強大、更穩定的 Pro 模型
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
     const { prompt: task, outfit, weather, imageUrl } = req.body;
 
-    // 任務：描述圖片 (維持不變)
+    // 任務：描述圖片 (維持不變，但同樣使用 Pro 模型)
     if (task === 'describe_image') {
         if (!imageUrl) return res.status(400).json({ error: '缺少圖片網址' });
         const imageResponse = await fetch(imageUrl);
@@ -57,21 +56,20 @@ export default async function handler(req, res) {
         return res.status(200).json({ response: { description: description } });
     }
     
-    // 任務：評分 (維持不變，但使用 REST API)
+    // 任務：評分 (維持不變)
     if (task === 'score_outfit') {
         const persona = "你是一位專業、有創意且友善的時尚穿搭顧問。";
         const weatherDescription = weather ? `目前的穿搭地點是${weather.city}，天氣為「${weather.description}」，氣溫 ${weather.currentTemp}°C。` : "";
-        const userOutfitDescription = [outfit.dress && `洋裝: ${outfit.dress.description}`, outfit.top && `上身: ${outfit.top.description}`, outfit.bottom && `下身: ${outfit.bottom.description}`, outfit.outerwear && `外套: ${outgit.outerwear.description}`].filter(Boolean).join('，');
+        const userOutfitDescription = [outfit.dress && `洋裝: ${outfit.dress.description}`, outfit.top && `上身: ${outfit.top.description}`, outfit.bottom && `下身: ${outfit.bottom.description}`, outfit.outerwear && `外套: ${outfit.outerwear.description}`].filter(Boolean).join('，');
         const fullPrompt = `${persona}\n\n${weatherDescription}\n\n我搭配了這一套衣服：${userOutfitDescription}。\n請根據天氣、風格、顏色協調性等方面，為這套穿搭打一個 1-100 分的分數，並提供一句精簡的評語說明理由。`;
         const schema = { type: "OBJECT", properties: { score: { type: "NUMBER" }, reasoning: { type: "STRING" } }, required: ["score", "reasoning"] };
-        
         const generationConfig = { responseMimeType: "application/json", responseSchema: schema };
         const result = await model.generateContent(fullPrompt, generationConfig);
         const responseObject = JSON.parse(result.response.text());
         return res.status(200).json({ response: responseObject });
     }
     
-    // 【最終修正】任務：產生建議 (回到最初的架構，但提示詞已優化)
+    // 任務：產生建議
     if (task === 'generate_suggestions') {
         const fullPrompt = createPrompt(weather, outfit);
         const schema = {
@@ -92,23 +90,16 @@ export default async function handler(req, res) {
 
         const generationConfig = { responseMimeType: "application/json", responseSchema: schema };
         
-        // 增加重試機制
-        for (let i = 0; i < 3; i++) {
-            try {
-                const result = await model.generateContent(fullPrompt, generationConfig);
-                const responseObject = JSON.parse(result.response.text());
+        // 使用 Pro 模型，一次請求即可，無需重試
+        const result = await model.generateContent(fullPrompt, generationConfig);
+        const responseObject = JSON.parse(result.response.text());
 
-                // 驗證回應是否有效
-                if (Array.isArray(responseObject) && responseObject.length > 0) {
-                    const validSuggestions = responseObject.filter(s => s.score && s.reasoning && (s.dress_id || (s.top_id && s.bottom_id)));
-                    if (validSuggestions.length > 0) {
-                        return res.status(200).json({ response: validSuggestions });
-                    }
-                }
-            } catch (error) {
-                console.warn(`Attempt ${i + 1} failed:`, error.message);
-                if (i === 2) throw error; // 最後一次嘗試失敗則拋出錯誤
-            }
+        // 最後的品管，過濾掉任何可能的瑕疵品
+        if (Array.isArray(responseObject) && responseObject.length > 0) {
+            const validSuggestions = responseObject.filter(s => s.score && s.reasoning && (s.dress_id || (s.top_id && s.bottom_id)));
+            return res.status(200).json({ response: validSuggestions });
+        } else {
+             return res.status(200).json({ response: [] }); // 如果Pro也失敗，回傳空陣列
         }
     }
 
