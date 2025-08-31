@@ -22,6 +22,7 @@ const SparklesIcon = createSvgIcon(<><path d="m12 3-1.9 1.9-1.3-2.8-1.3 2.8L5.6 
 const AlertTriangleIcon = createSvgIcon(<><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>);
 const GoogleIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#FF3D00" d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 35.797 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>);
 const EditIcon = createSvgIcon(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>);
+const MapPinOffIcon = createSvgIcon(<><path d="M12 20v-3.3a4.2 4.2 0 0 0-2.2-3.6l-1.6-1a4.2 4.2 0 0 1-1.2-5.7 4.2 4.2 0 0 1 6-1.2l1.6 1a4.2 4.2 0 0 0 2.2 3.6V17" /><path d="M12 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" /><path d="m2 2 20 20" /><path d="M9.1 9.1A4.2 4.2 0 0 1 12 4.8" /></>);
 
 // --- Component: CameraCaptureModal (相機捕捉彈窗) ---
 function CameraCaptureModal({ onClose, onCapture }) {
@@ -116,12 +117,11 @@ function App() {
     // --- State Declarations (狀態宣告) ---
     const [user, setUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
-    const [appStatus, setAppStatus] = useState('initializing'); // initializing -> locating -> fetching_weather -> ready
     const [members, setMembers] = useState([]);
     const [activeMember, setActiveMember] = useState(null);
     const [clothingItems, setClothingItems] = useState([]);
     const [view, setView] = useState('suggestions');
-    const [loading, setLoading] = useState({ suggestions: false, upload: false, scoring: false, optimization: false });
+    const [loading, setLoading] = useState({ suggestions: false, upload: false, weather: true, scoring: false, optimization: false });
     const [error, setError] = useState('');
     const fileInputRef = useRef(null);
     const [isMemberModalOpen, setMemberModalOpen] = useState(false);
@@ -130,10 +130,12 @@ function App() {
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
     const [weather, setWeather] = useState(null);
+    const [weatherStatus, setWeatherStatus] = useState({ loading: true, usingFallback: false, error: null });
     const [isCameraOpen, setCameraOpen] = useState(false);
     const [uploadQueue, setUploadQueue] = useState([]);
     const [currentItemToClassify, setCurrentItemToClassify] = useState(null);
     const [suggestions, setSuggestions] = useState([]);
+    const [hasGeneratedSuggestions, setHasGeneratedSuggestions] = useState(false);
     const [manualOutfit, setManualOutfit] = useState({ top: null, bottom: null, dress: null, outerwear: null });
     const [manualScoreResult, setManualScoreResult] = useState(null);
     const [scoreReasoning, setScoreReasoning] = useState(null);
@@ -142,54 +144,52 @@ function App() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [imageToView, setImageToView] = useState(null);
-    // 【最終修正】新增狀態來追蹤是否已嘗試獲取建議
-    const [hasAttemptedSuggestions, setHasAttemptedSuggestions] = useState(false);
 
     // --- useEffect Hooks (副作用掛鉤) ---
 
+    // 【最終修正】重構天氣與定位獲取邏輯
     useEffect(() => {
-        const fetchWeather = async (lat, lon) => {
-            setAppStatus('fetching_weather');
-            setError(prev => (prev.includes("天氣") || prev.includes("位置")) ? "" : prev);
+        const fetchWeather = async (lat, lon, isFallback = false) => {
+            setWeatherStatus({ loading: true, usingFallback: isFallback, error: null });
+            setError(''); // 清除舊的錯誤提示
             try {
-                const response = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
-                if (!response.ok) throw new Error('天氣伺服器回應錯誤');
-                const data = await response.json();
+                const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+                const data = await res.json();
                 if (data.error) throw new Error(data.error);
                 setWeather(data);
-                setAppStatus('ready');
             } catch (err) {
                 console.error("Weather fetch error:", err);
-                setError("無法獲取天氣資訊。");
-                setAppStatus('ready'); 
+                setWeatherStatus(prev => ({ ...prev, error: "無法獲取天氣資訊" }));
+            } finally {
+                setWeatherStatus(prev => ({ ...prev, loading: false }));
             }
         };
 
-        const handleLocation = async () => {
-            setAppStatus('locating');
-            if (!navigator.geolocation) {
-                setError("您的瀏覽器不支援定位，將使用預設地點。");
-                await fetchWeather(24.9576, 121.2245);
-                return;
-            }
+        const defaultLocation = { lat: 24.9576, lon: 121.2245 }; // 桃園市平鎮區
 
-            navigator.geolocation.getCurrentPosition(
+        const handlePositionError = (error) => {
+            console.warn(`Geolocation Error (${error.code}): ${error.message}`);
+            let errorMessage = "無法確定您的位置，將使用預設地點。";
+            if (error.code === 1) { // PERMISSION_DENIED
+                errorMessage = "您已拒絕位置授權，將使用預設地點。";
+            }
+            setError(errorMessage);
+            fetchWeather(defaultLocation.lat, defaultLocation.lon, true);
+        };
+        
+        if (navigator.geolocation) {
+             navigator.geolocation.getCurrentPosition(
                 (pos) => {
+                    setError(''); // 成功定位，清除可能存在的舊錯誤
                     fetchWeather(pos.coords.latitude, pos.coords.longitude);
-                },
-                async (err) => {
-                    console.warn("Geolocation failed:", err.message);
-                    let message = "無法獲取您的位置，將使用預設地點。";
-                    if (err.code === 1) message = "您已拒絕位置授權，將使用預設地點。";
-                    if (err.code === 3) message = "獲取位置超時，將使用預設地點。";
-                    setError(message);
-                    await fetchWeather(24.9576, 121.2245);
-                },
-                { timeout: 10000, maximumAge: 60000 }
+                }, 
+                handlePositionError,
+                { timeout: 10000, enableHighAccuracy: false } // 10秒超時
             );
-        };
-
-        handleLocation();
+        } else {
+            setError("您的瀏覽器不支援定位功能，將使用預設地點。");
+            fetchWeather(defaultLocation.lat, defaultLocation.lon, true);
+        }
     }, []);
 
     useEffect(() => {
@@ -214,7 +214,7 @@ function App() {
         const unsubClothing = onSnapshot(clothingQuery, snap => { setClothingItems(snap.docs.map(d => ({ id: d.id, ...d.data() }))); }, e => setError("讀取衣物資料失敗"));
 
         return () => { unsubMembers(); unsubClothing(); };
-    }, [user]);
+    }, [user, activeMember]);
 
     useEffect(() => {
         if (uploadQueue.length > 0 && !currentItemToClassify) {
@@ -223,7 +223,7 @@ function App() {
     }, [uploadQueue, currentItemToClassify]);
 
     useEffect(() => {
-        if (appStatus !== 'ready' || !activeMember || clothingItems.length === 0 || loading.optimization) return;
+        if (!activeMember || clothingItems.length === 0 || loading.optimization) return;
         
         const runBackgroundTasks = async () => {
             const itemsToAnalyze = clothingItems.filter(item => item.memberId === activeMember.id && !item.isAnalyzed);
@@ -254,7 +254,7 @@ function App() {
         };
         
         runBackgroundTasks();
-    }, [appStatus, activeMember, clothingItems]);
+    }, [activeMember, clothingItems]);
 
 
     // --- API & Data Functions (API 與資料處理函式) ---
@@ -267,7 +267,7 @@ function App() {
         } catch (error) {
             console.error(`Error calling ${endpoint}:`, error);
             setError(`服務暫時無法使用: ${error.message}`);
-            return null;
+            throw error; // 重新拋出錯誤以便上層捕捉
         }
     };
     
@@ -286,17 +286,18 @@ function App() {
     const fileToBase64 = (file) => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onload = () => resolve(reader.result);
         reader.onerror = error => reject(error);
     });
 
     const handleFileSelectFromPicker = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            handleFilesSelected([file]);
+        const files = Array.from(event.target.files);
+        if (files.length > 0) {
+            handleFilesSelected(files);
         }
         event.target.value = null;
     };
+    
     const handleCapture = (imageBlob) => {
         setCameraOpen(false);
         const fileName = `capture-${Date.now()}.jpg`;
@@ -315,7 +316,7 @@ function App() {
         const { file } = item;
         const storageRef = ref(storage, `clothing/${memberId}/${Date.now()}-${file.name}`);
         try {
-            const dataUrl = await fileToBase64(file).then(b64 => `data:image/jpeg;base64,${b64}`);
+            const dataUrl = await fileToBase64(file);
             const snap = await uploadString(storageRef, dataUrl, 'data_url');
             const url = await getDownloadURL(snap.ref);
             const memberName = members.find(m => m.id === memberId)?.name || '成員';
@@ -394,12 +395,12 @@ function App() {
     const generateSuggestions = async () => {
         if (!activeMember) { setError("請先選擇一位成員。"); return; }
         setLoading(p => ({ ...p, suggestions: true }));
-        setHasAttemptedSuggestions(true); // 【最終修正】記錄已嘗試獲取
         setSuggestions([]);
+        setHasGeneratedSuggestions(true);
+        setError('');
         
         const memberItems = clothingItems.filter(item => item.memberId === activeMember.id);
         const outfit = { 
-            member: activeMember, 
             tops: memberItems.filter(i => i.category === 'top'), 
             bottoms: memberItems.filter(i => i.category === 'bottom'), 
             dresses: memberItems.filter(i => i.category === 'dress'), 
@@ -409,34 +410,28 @@ function App() {
         try {
             const result = await callAPI('/api/gemini', { prompt: 'generate_suggestions', outfit, weather });
             if (result && Array.isArray(result.response)) {
-                const matchedSuggestions = result.response.map(sugg => ({
-                    top: outfit.tops.find(i => i.id === sugg.top_id) || null,
-                    bottom: outfit.bottoms.find(i => i.id === sugg.bottom_id) || null,
-                    dress: outfit.dresses.find(i => i.id === sugg.dress_id) || null,
-                    outerwear: outfit.outwears.find(i => i.id === sugg.outerwear_id) || null,
-                    score: sugg.score,
-                    reasoning: sugg.reasoning
-                }));
+                const matchedSuggestions = result.response
+                    .map(sugg => ({
+                        top: outfit.tops.find(i => i.id === sugg.top_id) || null,
+                        bottom: outfit.bottoms.find(i => i.id === sugg.bottom_id) || null,
+                        dress: outfit.dresses.find(i => i.id === sugg.dress_id) || null,
+                        outerwear: outfit.outwears.find(i => i.id === sugg.outerwear_id) || null,
+                        score: sugg.score,
+                        reasoning: sugg.reasoning
+                    }))
+                    .filter(s => s.dress || (s.top && s.bottom)); // 智慧過濾器
 
-                const completeSuggestions = matchedSuggestions.filter(sugg => {
-                    const isDressOutfit = sugg.dress;
-                    const isTopAndBottomOutfit = sugg.top && sugg.bottom;
-                    return isDressOutfit || isTopAndBottomOutfit;
-                });
+                setSuggestions(matchedSuggestions);
 
-                if (completeSuggestions.length === 0 && result.response.length > 0) {
-                    setError("AI 回應的搭配不完整，請再試一次。");
-                } else if (completeSuggestions.length < result.response.length) {
-                    console.warn("部分 AI 建議因不完整而被過濾。");
+                if (matchedSuggestions.length === 0 && result.response.length > 0) {
+                   setError("AI 回應的搭配不完整，請再試一次。");
                 }
-                
-                setSuggestions(completeSuggestions);
 
             } else { 
                 setError("AI 回應格式不正確，無法產生建議。"); 
             }
         } catch (e) { 
-            setError("產生建議時發生錯誤。"); 
+            // setError 已經在 callAPI 中設定
         } finally { 
             setLoading(p => ({ ...p, suggestions: false })); 
         }
@@ -449,14 +444,22 @@ function App() {
 
         try {
             const result = await callAPI('/api/gemini', { prompt: 'score_outfit', outfit: manualOutfit, weather });
-            if (result && result.response.score && result.response.reasoning) { setManualScoreResult(result.response); } else { setError("AI 評分失敗，請稍後再試。"); }
-        } catch (e) { setError("AI 評分時發生錯誤。"); } finally { setLoading(p => ({ ...p, scoring: false })); }
+            if (result && result.response && result.response.score && result.response.reasoning) { setManualScoreResult(result.response); } else { setError("AI 評分失敗，請稍後再試。"); }
+        } catch (e) { /* setError 已在 callAPI 中設定 */ } finally { setLoading(p => ({ ...p, scoring: false })); }
     };
 
     const confirmDeleteItem = async (item) => {
         const itemToDeleteFinal = item || itemToDelete;
         if (!itemToDeleteFinal) return;
-        try { await deleteDoc(doc(db, "clothingItems", itemToDeleteFinal.id)); await deleteObject(ref(storage, itemToDeleteFinal.storagePath)); } catch (error) { setError("刪除失敗。"); }
+        try { 
+            await deleteDoc(doc(db, "clothingItems", itemToDeleteFinal.id)); 
+            if (itemToDeleteFinal.storagePath) {
+                await deleteObject(ref(storage, itemToDeleteFinal.storagePath)); 
+            }
+        } catch (error) { 
+            setError("刪除失敗。"); 
+            console.error("Delete error:", error);
+        }
         setItemToDelete(null); setDeleteModalOpen(false); setIsEditModalOpen(false);
     };
     
@@ -480,41 +483,21 @@ function App() {
         ));
     };
 
-    const renderWeatherStatus = () => {
-        if (appStatus !== 'ready') return <span>正在載入天氣資訊...</span>;
-        if (weather) {
-            return (
-                <><SunIcon className="text-yellow-500 flex-shrink-0" />
-                <div className="flex flex-col items-start">
-                    <span className="font-semibold leading-tight">{weather.city}</span>
-                    <span className="leading-tight">{weather.currentTemp}°C <span className="text-xs text-gray-500">({weather.tempMin}°/{weather.tempMax}°)</span></span>
-                </div></>
-            );
-        }
-        return <span>天氣資訊無法取得</span>;
-    };
-
-    // 【最終修正】AI 推薦頁籤的顯示邏輯
-    const renderSuggestionsContent = () => {
+    const renderSuggestionContent = () => {
         if (loading.suggestions) {
             return <div className="flex flex-col items-center justify-center p-8 text-gray-500"><RefreshCwIcon className="animate-spin h-8 w-8 mb-4" /><p className="text-lg">AI 正在搭配中...</p></div>;
         }
         if (suggestions.length > 0) {
             return <div className="space-y-6">{suggestions.map((s, i) => ( <div key={i} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="grid grid-cols-2"><img src={s.top?.imageUrl || s.dress?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Top/Dress'} alt="Top/Dress" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.top?.imageUrl || s.dress?.imageUrl)}/><img src={s.bottom?.imageUrl || s.outerwear?.imageUrl || 'https://placehold.co/400x400/eee/ccc?text=Bottom/Outer'} alt="Bottom/Outerwear" className="w-full h-48 object-cover cursor-pointer" onClick={() => setImageToView(s.bottom?.imageUrl || s.outerwear?.imageUrl)}/></div><div className="p-4 bg-gray-50"><button onClick={() => setScoreReasoning(s)} className="w-full text-left"><p className="text-gray-700 italic">"{s.reasoning}"</p><p className="mt-2 text-lg font-bold text-pink-500 text-right">AI 評分: {s.score}</p></button></div></div> ))}</div>;
         }
-        if (hasAttemptedSuggestions) {
+        if (hasGeneratedSuggestions) {
             return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">找不到合適搭配</h3><p className="text-gray-500 mt-2">AI 找不到完整的穿搭建議，您可以調整衣物或稍後再試一次！</p></div>;
         }
-        // 檢查是否有足夠的衣物來產生建議
-        const hasTops = memberItems.some(item => item.category === 'top');
-        const hasBottoms = memberItems.some(item => item.category === 'bottom');
-        const hasDresses = memberItems.some(item => item.category === 'dress');
-        if (!((hasTops && hasBottoms) || hasDresses)) {
-             return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣物不足</h3><p className="text-gray-500 mt-2">請為「{activeMember?.name}」新增至少一件洋裝，或一件上身及一件下身，才能啟用 AI 推薦喔！</p></div>;
+        if (memberItems.length === 0) {
+             return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">衣櫥空空的...</h3><p className="text-gray-500 mt-2">請先為「{activeMember.name}」新增一些衣物吧！</p></div>;
         }
-        return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">準備好了嗎？</h3><p className="text-gray-500 mt-2">點擊右上角的更新按鈕，讓 AI 為您搭配今天的穿搭吧！</p></div>;
+        return <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">準備好了嗎？</h3><p className="text-gray-500 mt-2">點擊右上角的更新按鈕，讓 AI 為您推薦今日穿搭！</p></div>;
     };
-
 
     return (
         <div className="max-w-md mx-auto bg-white shadow-lg min-h-screen relative">
@@ -551,8 +534,10 @@ function App() {
             )}
 
             <header className="bg-white p-4 border-b sticky top-0 z-10 grid grid-cols-3 items-center">
-                <div className="flex items-center col-span-1"><UserIcon className="text-pink-500" /><select value={activeMember?.id || ''} onChange={(e) => setActiveMember(members.find(m => m.id === e.target.value))} className="ml-2 font-semibold text-lg border-none bg-transparent focus:ring-0" disabled={members.length === 0}>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button onClick={() => handleOpenMemberModal(activeMember)} className="p-1 text-gray-400 hover:text-gray-600" disabled={!activeMember}><EditIcon size={16}/></button></div>
-                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 col-span-1">{renderWeatherStatus()}</div>
+                <div className="flex items-center col-span-1"><UserIcon className="text-pink-500" /><select value={activeMember?.id || ''} onChange={(e) => { const newMember = members.find(m => m.id === e.target.value); if(newMember) setActiveMember(newMember); setHasGeneratedSuggestions(false); setSuggestions([]); }} className="ml-2 font-semibold text-lg border-none bg-transparent focus:ring-0" disabled={members.length === 0}>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button onClick={() => handleOpenMemberModal(activeMember)} className="p-1 text-gray-400 hover:text-gray-600" disabled={!activeMember}><EditIcon size={16}/></button></div>
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 col-span-1">
+                    {weatherStatus.loading ? <span>天氣載入中...</span> : weather ? ( <><SunIcon className="text-yellow-500 flex-shrink-0" />{weatherStatus.usingFallback && <MapPinOffIcon size={16} className="text-gray-400 flex-shrink-0" title="正在使用預設地點" /> }<div className="flex flex-col items-start"><span className="font-semibold leading-tight">{weather.city}</span><span className="leading-tight">{weather.currentTemp}°C <span className="text-xs text-gray-500">({weather.tempMin}°/{weather.tempMax}°)</span></span></div></> ) : <span>天氣資訊無法取得</span>}
+                </div>
                 <div className="flex justify-end col-span-1 items-center"><button onClick={() => handleOpenMemberModal(null)} className="p-2 rounded-full hover:bg-gray-100"><PlusIcon /></button><button onClick={handleSignOut} className="p-2 rounded-full hover:bg-gray-100 text-gray-500" title="登出"><LogOutIcon /></button></div>
             </header>
 
@@ -568,19 +553,14 @@ function App() {
 
                 {view !== 'add' && !activeMember && ( <div className="text-center p-8 bg-gray-50 rounded-lg"><h3 className="text-xl font-semibold text-gray-700">歡迎！</h3><p className="text-gray-500 mt-2">請點擊右上角的 '+' 來新增第一位成員，開始您的智慧穿搭之旅。</p></div> )}
 
-                {view === 'add' && ( <section className="flex flex-col items-center justify-center p-4"><h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>{!activeMember ? ( <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg w-full"><h3 className="text-xl font-semibold text-yellow-800">請先建立成員</h3><p className="text-yellow-700 mt-2">您需要先建立一個成員，才能開始新增衣物喔！</p><button onClick={() => handleOpenMemberModal(null)} className="mt-4 bg-pink-500 text-white font-bold py-2 px-4 rounded-lg">立即建立</button></div> ) : ( <> <p className="text-gray-600 mb-6 text-center">您可以選擇開啟相機拍照，或從相簿選擇照片。</p><div className="w-full max-w-xs space-y-4"><button onClick={() => setCameraOpen(true)} disabled={loading.upload} className="w-full bg-pink-500 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-pink-300"><CameraIcon />開啟相機</button><button onClick={() => fileInputRef.current.click()} disabled={loading.upload} className="w-full bg-gray-700 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-gray-500"><GalleryIcon />從相簿選擇</button></div><input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileSelectFromPicker} className="hidden" /></> )} </section> )}
+                {view === 'add' && ( <section className="flex flex-col items-center justify-center p-4"><h2 className="text-2xl font-bold text-gray-800 mb-4">新增衣物</h2>{!activeMember ? ( <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg w-full"><h3 className="text-xl font-semibold text-yellow-800">請先建立成員</h3><p className="text-yellow-700 mt-2">您需要先建立一個成員，才能開始新增衣物喔！</p><button onClick={() => handleOpenMemberModal(null)} className="mt-4 bg-pink-500 text-white font-bold py-2 px-4 rounded-lg">立即建立</button></div> ) : ( <> <p className="text-gray-600 mb-6 text-center">您可以選擇開啟相機拍照，或從相簿選擇照片。</p><div className="w-full max-w-xs space-y-4"><button onClick={() => setCameraOpen(true)} disabled={loading.upload} className="w-full bg-pink-500 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-pink-300"><CameraIcon />開啟相機</button><button onClick={() => fileInputRef.current.click()} disabled={loading.upload} className="w-full bg-gray-700 text-white font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2 disabled:bg-gray-500"><GalleryIcon />從相簿選擇</button></div><input type="file" accept="image/*" multiple ref={fileInputRef} onChange={handleFileSelectFromPicker} className="hidden" /></> )} </section> )}
 
                 {activeMember && (
                     <>
                         {view === 'suggestions' && (
                             <section>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2>
-                                    <button onClick={generateSuggestions} disabled={appStatus !== 'ready' || loading.suggestions} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50">
-                                        <RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/>
-                                    </button>
-                                </div>
-                                {renderSuggestionsContent()}
+                                <div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold text-gray-800">AI 推薦</h2><button onClick={generateSuggestions} disabled={loading.suggestions || weatherStatus.loading} className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-50"><RefreshCwIcon className={loading.suggestions ? 'animate-spin' : ''}/></button></div>
+                                {renderSuggestionContent()}
                             </section>
                         )}
                         {view === 'manual' && (
@@ -592,7 +572,7 @@ function App() {
                                     <div><h3 className={`text-lg font-semibold mb-2 ${manualOutfit.dress ? 'text-gray-400' : 'text-gray-700'}`}>下身</h3><div className="grid grid-cols-3 gap-2">{renderClothingGrid(memberBottoms, 'bottom', manualOutfit.bottom, handleManualSelect, !!manualOutfit.dress)}</div></div>
                                     <div><h3 className="text-lg font-semibold text-gray-700 mb-2">外套</h3><div className="grid grid-cols-3 gap-2">{renderClothingGrid(memberOutwears, 'outerwear', manualOutfit.outerwear, handleManualSelect)}</div></div>
                                 </div>
-                                <div className="mt-6 text-center"><button onClick={scoreManualOutfit} disabled={loading.scoring} className="bg-pink-500 text-white font-bold py-3 px-6 rounded-full w-full flex items-center justify-center disabled:bg-pink-300">{loading.scoring ? <RefreshCwIcon className="animate-spin mr-2"/> : <LightbulbIcon className="mr-2"/>}{loading.scoring ? 'AI 評分中...' : '獲取 AI 評分'}</button>{manualScoreResult && ( <button onClick={() => setScoreReasoning(manualScoreResult)} className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg text-purple-800 w-full text-left"><p className="italic">"{manualScoreResult.reasoning}"</p><p className="mt-2 text-lg font-bold text-right">AI 評分: {manualScoreResult.score}</p></button> )}</div>
+                                <div className="mt-6 text-center"><button onClick={scoreManualOutfit} disabled={loading.scoring || weatherStatus.loading} className="bg-pink-500 text-white font-bold py-3 px-6 rounded-full w-full flex items-center justify-center disabled:bg-pink-300">{loading.scoring ? <RefreshCwIcon className="animate-spin mr-2"/> : <LightbulbIcon className="mr-2"/>}{loading.scoring ? 'AI 評分中...' : '獲取 AI 評分'}</button>{manualScoreResult && ( <button onClick={() => setScoreReasoning(manualScoreResult)} className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg text-purple-800 w-full text-left"><p className="italic">"{manualScoreResult.reasoning}"</p><p className="mt-2 text-lg font-bold text-right">AI 評分: {manualScoreResult.score}</p></button> )}</div>
                             </section>
                         )}
                         {view === 'gallery' && (
@@ -728,7 +708,8 @@ function DuplicateReviewModal({ item, allItems, onClose, onResolve, onViewImage 
     const potentialMatch = allItems.find(i => i.id === item.potentialMatchId);
 
     if (!potentialMatch) {
-        onClose();
+        // 自動解決：如果找不到匹配的項目，就標記為唯一並關閉
+        onResolve(item, false); 
         return null;
     }
 
