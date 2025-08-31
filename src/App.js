@@ -173,6 +173,10 @@ function App() {
             if (error.code === 1) { // PERMISSION_DENIED
                 errorMessage = "您已拒絕位置授權，將使用預設地點。";
             }
+            // 【最終修正】專門處理 kCLErrorLocationUnknown
+            if (error.code === 2 && error.message.includes("kCLErrorLocationUnknown")) {
+                errorMessage = "暫時無法獲取精準定位，將使用預設地點。";
+            }
             setError(errorMessage);
             fetchWeather(defaultLocation.lat, defaultLocation.lon, true);
         };
@@ -750,3 +754,4 @@ function ImageViewerModal({ imageUrl, onClose }) {
 }
 
 export default App;
+
