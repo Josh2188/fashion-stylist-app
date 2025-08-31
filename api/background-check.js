@@ -10,11 +10,10 @@ try {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
     throw new Error("Firebase service account key is not set.");
   }
+  // 假設 Vercel 中的環境變數已經是格式正確的單行 JSON 字串
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
-  // 【最終修正】在解析前，先將金鑰字串化再解析，避免 Vercel 環境變數格式問題
-  const serviceAccountString = JSON.stringify(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-  const serviceAccount = JSON.parse(JSON.parse(serviceAccountString)); // 雙重解析是必要的
-
+  // 使用 Singleton 模式，避免重複初始化
   if (!global._firebaseApp) {
     global._firebaseApp = initializeApp({
       credential: cert(serviceAccount)
@@ -44,10 +43,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
-  
-  // 檢查 Firebase 是否成功初始化
+
   if (!global._firebaseApp) {
-    return res.status(500).json({ error: 'Firebase Admin SDK not initialized.' });
+    return res.status(500).json({ error: 'Firebase Admin SDK failed to initialize.' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -64,7 +62,7 @@ export default async function handler(req, res) {
     const clothingRef = collection(db, 'clothingItems');
     const q = query(clothingRef, where('memberId', '==', memberId));
     const snapshot = await getDocs(q);
-    const allMemberItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const allMemberItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
     const newItem = allMemberItems.find(item => item.id === itemId);
     if (!newItem) {
@@ -119,3 +117,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'An internal error occurred during the check.' });
   }
 }
+
