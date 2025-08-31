@@ -2,17 +2,19 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import fetch from 'node-fetch';
+import { getFirestore, collection, query, where, getDocs, doc, updateDoc } from 'firebase-admin/firestore';
+const fetch = require('node-fetch');
 
 // --- Firebase Admin Initialization ---
-// Initialize Firebase Admin SDK only once
 try {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
     throw new Error("Firebase service account key is not set.");
   }
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-  
+
+  // 【最終修正】在解析前，先將金鑰字串化再解析，避免 Vercel 環境變數格式問題
+  const serviceAccountString = JSON.stringify(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+  const serviceAccount = JSON.parse(JSON.parse(serviceAccountString)); // 雙重解析是必要的
+
   if (!global._firebaseApp) {
     global._firebaseApp = initializeApp({
       credential: cert(serviceAccount)
@@ -41,6 +43,11 @@ const fetchImageAsBase64 = async (imageUrl) => {
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+  
+  // 檢查 Firebase 是否成功初始化
+  if (!global._firebaseApp) {
+    return res.status(500).json({ error: 'Firebase Admin SDK not initialized.' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -76,7 +83,7 @@ export default async function handler(req, res) {
     let matchFound = false;
 
     for (const existingItem of allMemberItems) {
-      if (existingItem.id === newItem.id) continue; // Skip self-comparison
+      if (existingItem.id === newItem.id) continue;
 
       const existingImageBase64 = await fetchImageAsBase64(existingItem.imageUrl);
       if (!existingImageBase64) continue;
@@ -95,7 +102,7 @@ export default async function handler(req, res) {
           potentialMatchId: existingItem.id
         });
         matchFound = true;
-        break; // Stop after the first match
+        break;
       }
     }
 
