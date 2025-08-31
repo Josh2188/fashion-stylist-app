@@ -2,7 +2,7 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore, collection, query, where, getDocs, doc, updateDoc } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 const fetch = require('node-fetch');
 
 // --- Firebase Admin Initialization ---
@@ -10,10 +10,8 @@ try {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
     throw new Error("Firebase service account key is not set.");
   }
-  // 假設 Vercel 中的環境變數已經是格式正確的單行 JSON 字串
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
-  // 使用 Singleton 模式，避免重複初始化
   if (!global._firebaseApp) {
     global._firebaseApp = initializeApp({
       credential: cert(serviceAccount)
@@ -59,10 +57,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'itemId and memberId are required.' });
     }
 
-    const clothingRef = collection(db, 'clothingItems');
-    const q = query(clothingRef, where('memberId', '==', memberId));
-    const snapshot = await getDocs(q);
-    const allMemberItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // 【最終修正】使用 Admin SDK 的正確語法
+    const clothingRef = db.collection('clothingItems');
+    const q = clothingRef.where('memberId', '==', memberId);
+    const snapshot = await q.get();
+    const allMemberItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     const newItem = allMemberItems.find(item => item.id === itemId);
     if (!newItem) {
@@ -95,7 +94,8 @@ export default async function handler(req, res) {
       const answer = result.response.text().trim().toLowerCase();
 
       if (answer.includes('yes')) {
-        await updateDoc(doc(db, "clothingItems", newItem.id), {
+        // 【最終修正】使用 Admin SDK 的正確語法
+        await clothingRef.doc(newItem.id).update({
           duplicateStatus: 'needs_review',
           potentialMatchId: existingItem.id
         });
@@ -105,7 +105,8 @@ export default async function handler(req, res) {
     }
 
     if (!matchFound) {
-      await updateDoc(doc(db, "clothingItems", newItem.id), {
+      // 【最終修正】使用 Admin SDK 的正確語法
+      await clothingRef.doc(newItem.id).update({
         duplicateStatus: 'unique'
       });
     }
