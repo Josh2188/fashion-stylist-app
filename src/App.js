@@ -445,6 +445,7 @@ function App() {
         if (!manualOutfit.dress && (!manualOutfit.top || !manualOutfit.bottom)) { setError("請至少選擇一件洋裝，或一件上身加一件下身。"); return; }
         setLoading(p => ({ ...p, scoring: true }));
         setManualScoreResult(null);
+        setError(''); // 清除舊的錯誤
 
         try {
             // 【最終修正】在請求中加入 'prompt' 欄位
