@@ -447,9 +447,17 @@ function App() {
         setManualScoreResult(null);
 
         try {
+            // 【最終修正】在請求中加入 'prompt' 欄位
             const result = await callAPI('/api/gemini', { prompt: 'score_outfit', outfit: manualOutfit, weather });
-            if (result && result.response && result.response.score && result.response.reasoning) { setManualScoreResult(result.response); } else { setError("AI 評分失敗，請稍後再試。"); }
-        } catch (e) { /* setError 已在 callAPI 中設定 */ } finally { setLoading(p => ({ ...p, scoring: false })); }
+            if (result && result.response && result.response.score && result.response.reasoning) { 
+                setManualScoreResult(result.response); 
+            } else { 
+                setError("AI 評分失敗，請稍後再試。"); 
+            }
+        } catch (e) { /* setError 已在 callAPI 中設定 */ } 
+        finally { 
+            setLoading(p => ({ ...p, scoring: false })); 
+        }
     };
 
     const confirmDeleteItem = async (item) => {
