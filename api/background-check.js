@@ -74,7 +74,7 @@ export default async function handler(req, res) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompt = "Are these two images of the same clothing item? Consider variations in angle, lighting, or wrinkles. Please answer only with a single word: 'Yes' or 'No'.";
 
     let matchFound = false;
